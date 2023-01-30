@@ -1,3 +1,4 @@
+import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
 import { Socket } from "net";
 
@@ -16,6 +17,8 @@ export class Player extends EventEmitter {
         this.sock = sock;
         this.sock.on('data', this.handleData.bind(this));
         this.sock.on('close', () => this.emit('disconnected'));
+        Logger.log(Level.INFO, `Player joined with ID = ${id}`,
+            `IP:PORT = ${sock.remoteAddress}:${sock.remotePort}`);
     }
 
     postAuth(name: string, sec: string) {
@@ -41,12 +44,8 @@ export class Player extends EventEmitter {
             return;
         }
 
-        if (this.authenticated || msg.type == 'Login')
-            this.emit("message", this, msg);
-    }
-
-    private handleDisconnection() {
-
+        if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
+        if (this.authenticated || msg.type == 'Login') this.emit("message", this, msg);
     }
 
     switchState(newSock: Socket = null) {
@@ -55,33 +54,40 @@ export class Player extends EventEmitter {
             this.sock = null;
             this.status = 'idle';
             this.authenticated = false;
-        } else if (newSock != null) {
+            Logger.log(Level.INFO, `Player(${this.name}) Stalled`);
+        }
+        else if (newSock != null) {
             this.alive = true;
             this.sock = newSock;
+            Logger.log(Level.INFO, `Player(${this.name}) Revived`)
         }
     }
 
     switchStatus(playing: boolean = false) {
         if (playing) {
             this.status = 'playing';
-            return;
+        }
+        else {
+            if (this.status == 'idle')
+                this.status = 'searching';
+            else if (this.status == 'searching')
+                this.status = 'idle';
         }
 
-        if (this.status == 'idle')
-            this.status = 'searching';
-        else if (this.status == 'searching')
-            this.status = 'idle';
-
         this.emit("status", this);
+        Logger.log(Level.INFO, `Switched ${this.name}'s status to ${this.status}`);
     }
 
     send(type: string, data: any, bypass: boolean = false) {
         if ((bypass || this.authenticated) && this.alive && this.sock.readyState == "open") {
             const msg = { type, data };
-
-            this.sock.write(JSON.stringify(msg), (err) => {
-                console.error(err);
+            this.sock.write(JSON.stringify(msg), (e) => {
+                Logger.log(Level.ERROR, `Socket Write(Send) failed`, e.toString());
             });
+        } else {
+            Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
+                `bypass : authenticated = ${bypass} : ${this.authenticated}`,
+                `alive : readyState = ${this.alive} : ${this.sock.readyState}`);
         }
     }
 }

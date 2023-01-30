@@ -1,3 +1,4 @@
 import { Server } from './server';
-const myServer = new Server();
-// [To-Do] implement loggings
+import { Logger } from './logger';
+Logger.initialize(true);
+Server.start();

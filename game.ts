@@ -1,8 +1,10 @@
+import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 import { Player } from './player';
 
 export class Game extends EventEmitter {
+    opponent: { [id: number]: Player };
     session: string;
     plr1: Player;
     plr2: Player;
@@ -11,9 +13,12 @@ export class Game extends EventEmitter {
         super();
         this.plr1 = plr1;
         this.plr2 = plr2;
+        this.opponent[plr1.id] = plr2;
+        this.opponent[plr2.id] = plr1;
         const salt = Math.floor(Math.random() * (500 - 1 + 1)) + 1;
         const plainSess = plr1.sock.remoteAddress + plr2.sock.remoteAddress;
         this.session = createHash('md5').update(plainSess + salt.toString()).digest('hex');
+        Logger.log(Level.INFO, `New Game-Table Created`, `Players (${plr1.name} vs ${plr2.name})`);
         this.start();
     }
 
@@ -23,11 +28,13 @@ export class Game extends EventEmitter {
 
         this.toOpponent(this.plr1, {
             opponent: this.plr1.id,
+            session: this.session,
             kind: "Found"
         });
 
         this.toOpponent(this.plr2, {
             opponent: this.plr2.id,
+            session: this.session,
             kind: "Found"
         });
 
@@ -40,9 +47,7 @@ export class Game extends EventEmitter {
     }
 
     toOpponent(sender: Player, gd) {
-        if (sender === this.plr1)
-            this.plr2.send("Game-MSG", gd);
-        else this.plr1.send("Game-MSG", gd);
+        this.opponent[sender.id].send("Game-MSG", gd);
     }
 
     toBoth(gd) {
