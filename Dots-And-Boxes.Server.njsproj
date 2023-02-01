@@ -43,6 +43,9 @@
     </TypeScriptCompile>
     <TypeScriptCompile Include="player.ts" />
     <TypeScriptCompile Include="server.ts" />
+    <TypeScriptCompile Include="utility.ts">
+      <SubType>Code</SubType>
+    </TypeScriptCompile>
   </ItemGroup>
   <Import Project="$(VSToolsPath)\Node.js Tools\Microsoft.NodejsToolsV2.targets" />
   <ProjectExtensions>

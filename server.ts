@@ -1,12 +1,23 @@
 import { Game } from './game';
+import { Utils } from './utility';
 import { Player } from './player';
+import { AceBase } from 'acebase';
+import { writeFileSync } from 'fs';
 import { createServer } from "net";
 import { Level, Logger } from './logger';
-import { randomBytes, createHmac } from 'crypto';
-const localDB = ["Rishabh", "Hariom", "Akash", "Abhit", "Kelvin", "Nishant"];
-// Next step would be to use a dynamic db
+
+export enum DBMode {
+    WRITE,
+    UPDATE,
+    REMOVE
+}
 
 export abstract class Server {
+    static db = new AceBase('dab-db', {
+        storage: { path: __dirname },
+        logLevel: 'error'
+    });
+    
     static stalePlayers: Player[] = [];
     static players: Player[] = [];
     static games: Game[] = [];
@@ -14,6 +25,7 @@ export abstract class Server {
 
     static start() {
         const PORT = 8080;
+        this.randomizeAccess();
         // process.env.PORT || 8080
         const server = createServer();
         server.listen(PORT, () => Logger.log(Level.INFO,
@@ -40,36 +52,109 @@ export abstract class Server {
         });
     }
 
-    private static handleMSG(plr: Player, msg: any) {
+    static async dbGet(path: string): Promise<any> {
+        const snap = await this.db.ref(path).get();
+        if (!snap.exists()) return null;
+        else return snap.val();
+    }
+
+    static async dbSet(mode: DBMode, path: string, data: any = null) {
+        const dref = this.db.ref(path);
+
+        switch (mode) {
+            case DBMode.WRITE:
+                await dref.set(data);
+                break;
+
+            case DBMode.UPDATE:
+                await dref.update(data);
+                break;
+
+            case DBMode.REMOVE:
+                await dref.remove();
+                break;
+        }
+    }
+
+    private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
         switch (msg.type) {
             case "Login":
-                if (data.code == 'dab-1029' && localDB.includes(data.name)) {
-                    let secId = plr.id;
-                    let secIp = plr.sock.remoteAddress;
-                    let secSalt = "JH(4gg*@bIU98*HdfdEUiue";
-                    const secret = this.createSecureHash(secId + secIp + secSalt);
-                    plr.postAuth((data.name).toString(), secret);
-                    this.players.push(plr);
+                let uidEm = 'null';
+                if (typeof data.email == 'string') {
+                    data.email = data.email.toLowerCase();
+                    uidEm = Utils.hash(data.email);
+                }
 
-                    this.broadcast('Joined', {
-                        name: plr.name,
-                        id: plr.id
-                    }, plr);
+                const userDet = await this
+                    .dbGet(`users/${uidEm}`);
 
-                    let plrsData: any[] = [];
-                    this.players.forEach((p) => {
-                        plrsData.push({
-                            id: p.id,
-                            name: p.name,
-                            status: p.status
+                if (userDet !== null) {
+                    if (userDet.pass == data.pass) {
+                        let secId = plr.id;
+                        let secIp = plr.sock.remoteAddress;
+                        let secSalt = "JH(4gg*@bIU98*HdfdEUiue";
+                        const secret = Utils.hash(secId + secIp + secSalt);
+                        plr.postAuth(userDet.name, secret, uidEm);
+                        this.players.push(plr);
+
+                        this.broadcast('Joined', {
+                            name: userDet.name,
+                            id: plr.id
+                        }, plr);
+
+                        let plrsData: any[] = [];
+                        this.players.forEach((p) => {
+                            plrsData.push({
+                                id: p.id,
+                                name: p.name,
+                                status: p.status
+                            });
                         });
-                    });
 
-                    plr.send("Logged-In", {
-                        players: plrsData,
-                        id: plr.id,
-                        secret
+                        plr.send("Logged-In", {
+                            players: plrsData,
+                            id: plr.id,
+                            secret
+                        });
+                    }
+                    else plr.send('Error', "Oops! That's not your valid login password.");
+                    return;
+                }
+
+                plr.send('Error', "Please register first to continue");
+                break;
+
+            case "Register":
+                if (await this.dbGet('regAccessCode') == data.access) {
+                    if (data.name.length < 5) {
+                        plr.send('Error', "Name is too short, it should be at least 4 characters long.", true);
+                        return;
+                    }
+
+                    if (Utils.isValidPassword(data.pass)) {
+                        plr.send('Error', "Paswword should be alphanumeric having at least 8 characters including special characters", true);
+                        return;
+                    }
+
+                    if (!data.email || !Utils.isValidEmail(data.email)) {
+                        plr.send('Error', "This email doesn't looks like a valid one, try again.", true);
+                        return;
+                    }
+
+                    if (typeof data.email == 'string')
+                        data.email = data.email.toLowerCase();
+                    let uidEM = Utils.hash(data.email);
+
+                    await this.dbSet(DBMode.WRITE, `users/${uidEm}`, {
+                        email: data.email,
+                        name: data.name,
+                        pass: data.pass,
+                        game: {
+                            total: 0,
+                            lost: 0,
+                            won: 0
+                        }
                     });
                 }
                 break;
@@ -93,7 +178,7 @@ export abstract class Server {
                 }
 
                 if (!matchFound) {
-                    const vFunc = this.validator((p: Player) => p.status == 'idle');
+                    const vFunc = Utils.validator((p: Player) => p.status == 'idle');
                     this.broadcast('Play-Request', {
                         id: plr.id
                     }, vFunc);
@@ -110,10 +195,10 @@ export abstract class Server {
         }
     }
 
-    private static createSecureHash(string) {
-        const salt = randomBytes(16).toString('hex');
-        const hash = createHmac('sha256', salt).update(string).digest('hex');
-        return salt + hash;
+    private static async randomizeAccess() {
+        const code = parseInt(`${Math.random() * (999999 - 100000) + 100000}`);
+        await this.dbSet(DBMode.WRITE, 'regAccessCode', code);
+        writeFileSync('access.txt', code.toString());
     }
 
     private static handleGameStart(game: Game) {
@@ -134,12 +219,6 @@ export abstract class Server {
             status: exPlr.status,
             id: exPlr.id
         }, exPlr);
-    }
-
-    private static validator(predicate: Function) {
-        return function (value) {
-            return predicate(value);
-        }
     }
 
     private static broadcast(type: string, data: any, check: Player | Function = null) {

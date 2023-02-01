@@ -12,6 +12,11 @@ export abstract class Logger {
     private static isLocal: boolean;
 
     static initialize(local: boolean) {
+        process.on('uncaughtException', (err) => {
+            Logger.log(Level.ERROR, "Unhandled Error Encountered",
+                `[Msg]=> ${err.toString()}`, `[Stack]=> ${err.stack}`);
+        });
+
         fs.mkdirSync(this.logDir, { recursive: true });
         process.env.TZ = 'Asia/Kolkata';
         this.isLocal = local;

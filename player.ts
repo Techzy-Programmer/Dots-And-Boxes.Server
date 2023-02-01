@@ -5,6 +5,7 @@ import { Socket } from "net";
 export class Player extends EventEmitter {
     sock: Socket;
     name: string;
+    dbRef: string;
     secret: string;
     id: number = -1;
     alive: boolean = true;
@@ -16,12 +17,14 @@ export class Player extends EventEmitter {
         this.id = id;
         this.sock = sock;
         this.sock.on('data', this.handleData.bind(this));
+        this.sock.on('error', () => this.emit('disconnected'));
         this.sock.on('close', () => this.emit('disconnected'));
         Logger.log(Level.INFO, `Player joined with ID = ${id}`,
             `IP:PORT = ${sock.remoteAddress}:${sock.remotePort}`);
     }
 
-    postAuth(name: string, sec: string) {
+    postAuth(name: string, sec: string, ref: string) {
+        this.dbRef = ref;
         this.name = name;
         this.secret = sec;
         this.authenticated = true;
@@ -45,7 +48,7 @@ export class Player extends EventEmitter {
         }
 
         if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
-        if (this.authenticated || msg.type == 'Login') this.emit("message", this, msg);
+        else if (this.authenticated || ['Login', 'Register'].includes(msg.typ)) this.emit("message", this, msg);
     }
 
     switchState(newSock: Socket = null) {
