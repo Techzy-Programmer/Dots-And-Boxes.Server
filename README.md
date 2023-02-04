@@ -1,3 +1,3 @@
-# Dots-And-Boxes.Server
+# Game-Server
 
 
