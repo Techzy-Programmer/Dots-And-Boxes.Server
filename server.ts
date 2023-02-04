@@ -1,4 +1,5 @@
 import { Game } from './game';
+import { BingoGame } from './bingo';
 import { Utils } from './utility';
 import { Player } from './player';
 import { AceBase } from 'acebase';
@@ -168,7 +169,7 @@ export abstract class Server {
 
                     if (opponent !== plr && opponent.status == "searching") {
                         matchFound = true;
-                        const game = new Game(plr, opponent);
+                        const game = new BingoGame(plr, opponent);
                         game.on("Start", () => this.handleGameStart(game));
                         game.on('update', () => this.handleGameUpdate(game));
                         game.on('end', () => this.handleGameEnd(game));
@@ -201,15 +202,15 @@ export abstract class Server {
         writeFileSync('access.txt', code.toString());
     }
 
-    private static handleGameStart(game: Game) {
+    private static handleGameStart(game: BingoGame) {
         // Broadcast to users that a new game has started
     }
 
-    private static handleGameEnd(game: Game) {
+    private static handleGameEnd(game: BingoGame) {
         // Broadcast to users & viewers that game has ended
     }
 
-    private static handleGameUpdate(game: Game) {
+    private static handleGameUpdate(game: BingoGame) {
         // Implement feature to live view any active game
         // Broadcast updates to players who are actively wathching live games
     }

@@ -37,8 +37,13 @@
     <Content Include="tsconfig.json" />
   </ItemGroup>
   <ItemGroup>
+    <TypeScriptCompile Include="bingo.ts">
+      <SubType>Code</SubType>
+    </TypeScriptCompile>
     <TypeScriptCompile Include="cleaner.ts" />
-    <TypeScriptCompile Include="game.ts" />
+    <TypeScriptCompile Include="game.ts">
+      <SubType>Code</SubType>
+    </TypeScriptCompile>
     <TypeScriptCompile Include="logger.ts">
       <SubType>Code</SubType>
     </TypeScriptCompile>
