@@ -1,5 +1,5 @@
 import { Game } from './game';
-import { BingoGame } from './bingo';
+import { Lobby } from './lobby';
 import { Utils } from './utility';
 import { Player } from './player';
 import { AceBase } from 'acebase';
@@ -161,29 +161,7 @@ export abstract class Server {
                 break;
 
             case "Search":
-                plr.switchStatus();
-                let matchFound: Boolean = false;
-
-                for (var i = 0; i < this.players.length; i++) {
-                    const opponent = this.players[i];
-
-                    if (opponent !== plr && opponent.status == "searching") {
-                        matchFound = true;
-                        const game = new BingoGame(plr, opponent);
-                        game.on("Start", () => this.handleGameStart(game));
-                        game.on('update', () => this.handleGameUpdate(game));
-                        game.on('end', () => this.handleGameEnd(game));
-                        this.games.push(game);
-                        break;
-                    }
-                }
-
-                if (!matchFound) {
-                    const vFunc = Utils.validator((p: Player) => p.status == 'idle');
-                    this.broadcast('Play-Request', {
-                        id: plr.id
-                    }, vFunc);
-                }
+                Lobby.addFinder(plr, msg.gameId, msg.plrCount);
                 break;
 
             case "Cancel-Search":
@@ -200,19 +178,6 @@ export abstract class Server {
         const code = parseInt(`${Math.random() * (999999 - 100000) + 100000}`);
         await this.dbSet(DBMode.WRITE, 'regAccessCode', code);
         writeFileSync('access.txt', code.toString());
-    }
-
-    private static handleGameStart(game: BingoGame) {
-        // Broadcast to users that a new game has started
-    }
-
-    private static handleGameEnd(game: BingoGame) {
-        // Broadcast to users & viewers that game has ended
-    }
-
-    private static handleGameUpdate(game: BingoGame) {
-        // Implement feature to live view any active game
-        // Broadcast updates to players who are actively wathching live games
     }
 
     private static pushStatusUpdate(exPlr: Player) {

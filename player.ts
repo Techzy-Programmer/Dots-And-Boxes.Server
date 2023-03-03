@@ -8,6 +8,7 @@ export class Player extends EventEmitter {
     dbRef: string;
     secret: string;
     id: number = -1;
+    gnum: number = -1;
     alive: boolean = true;
     authenticated: boolean;
     status: String = "idle";

@@ -4,13 +4,13 @@ import { Game } from './game';
 export class BingoGame extends Game {
     private logic = new BingoLogic();
 
-    constructor(plr1: Player, plr2: Player) {
-        super("Bingo", plr1, plr2);
+    constructor(...plrs: Player[]) {
+        super("Bingo", ...plrs);
         this.start();
     }
 
     private start() {
-        this.processBoth((p: Player) =>
+        this.processAll((p: Player) =>
             this.logic.setPlayer(p));
 
         this.onMessage((p, data) => {
@@ -20,47 +20,81 @@ export class BingoGame extends Game {
     }
 
     private processMsg(msg: BingoMSG) {
-        // To-Do
+        switch (msg.type) {
+            case "Turn":
+                break;
+
+            case "Chat":
+                break;
+
+            default:
+                break;
+        }
     }
 }
 
 class BingoMSG {
+    type: string;
     sender: Player;
-    place: number;
+    message: string;
+    point2D: number[];
 
     constructor(s, d) {
         this.sender = s;
-        this.place = d.place;
+        this.type = d.type;
+        this.message = d.msg;
+        this.point2D = d.point2D;
     }
 }
 
 class BingoLogic {
     private plrs: Player[] = [];
-    private gmap: { [id: number]: number[] } = {};
+    private numsStr: string[] = [];
+    private boardMap: { [id: number]: string[] };
+    private gmap: { [id: number]: Map<number, number[]> } = {};
+
+    constructor() {
+        let incCount = 1;
+        this.numsStr = Array.from({ length: 25 }, () => `${incCount++}`);
+    }
 
     setPlayer(p: Player) {
-        const ar0 = Array.from({ length: 25 }, () => 0);
-        this.gmap[p.id] = ar0;
+        const posMap = new Map<number, number[]>();
+        const ar0 = Array.from({ length: 5 }, () => 0);
+        for (var i = 0; i < 5; i++) posMap.set(i, ar0);
+        this.gmap[p.id] = posMap;
         this.plrs.push(p);
+
+        for (const plr of this.plrs) {
+            let board = this.getBoard();
+            this.boardMap[plr.id] = board;
+            plr.send("Game-MSG", {
+                msg: 'board',
+                board
+            });
+        }
     }
 
-    generateBoard(): Array<{ p: Player, b: string[] }> {
-        return this.plrs.map((p) => ({
-            p, b: this.getBoard()
-        }));
+    validatePlace(plr: Player, pos: number[]): string {
+        if (!this.validatePosition(pos) || this.gmap[plr.id][pos[0]][pos[1]] !== 0) {
+            return "";
+        }
+
+        this.gmap[plr.id][pos[0]][pos[1]]++;
+        return this.boardMap[plr.id][pos[0] + pos[1]];
     }
 
-    validatePlace(p: Player, n: number): boolean {
-        if (n > 25 || n < 1) return false;
-        let isOk: boolean = this.gmap[p.id][n - 1] == 0;
-        if (isOk) this.gmap[p.id][n - 1] += 1;
-        return isOk;
+    private validatePosition(pos: number[]): boolean {
+        for (var i = 0; i < 2; i++) {
+            if (pos[i] > 4 || pos[i] < 0)
+                return false;
+        }
+
+        return true;
     }
 
     private getBoard(): string[] {
-        let numsStr: string[] = [];
-        for (var i = 1; i <= 25; i++)
-            numsStr.push(i.toString());
-        return numsStr.sort(() => (Math.random() - 0.5));
+        return this.numsStr.sort(() =>
+            (Math.random() - 0.5));
     }
 }

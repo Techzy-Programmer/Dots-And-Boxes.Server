@@ -47,6 +47,9 @@
     <TypeScriptCompile Include="logger.ts">
       <SubType>Code</SubType>
     </TypeScriptCompile>
+    <TypeScriptCompile Include="lobby.ts">
+      <SubType>Code</SubType>
+    </TypeScriptCompile>
     <TypeScriptCompile Include="player.ts" />
     <TypeScriptCompile Include="server.ts" />
     <TypeScriptCompile Include="utility.ts">
