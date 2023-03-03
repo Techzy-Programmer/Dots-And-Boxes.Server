@@ -59,16 +59,18 @@ class BingoLogic {
     }
 
     setPlayer(p: Player) {
+        // Initialize logic variables for given player
         const posMap = new Map<number, number[]>();
         const ar0 = Array.from({ length: 5 }, () => 0);
         for (var i = 0; i < 5; i++) posMap.set(i, ar0);
         this.gmap[p.id] = posMap;
         this.plrs.push(p);
 
-        for (const plr of this.plrs) {
+        // Generate and send the Bingo game board to the player
+        for (const p of this.plrs) {
             let board = this.getBoard();
-            this.boardMap[plr.id] = board;
-            plr.send("Game-MSG", {
+            this.boardMap[p.id] = board;
+            p.send("Game-MSG", {
                 msg: 'board',
                 board
             });
