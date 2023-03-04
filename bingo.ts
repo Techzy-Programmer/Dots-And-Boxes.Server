@@ -67,14 +67,12 @@ class BingoLogic {
         this.plrs.push(p);
 
         // Generate and send the Bingo game board to the player
-        for (const p of this.plrs) {
-            let board = this.getBoard();
-            this.boardMap[p.id] = board;
-            p.send("Game-MSG", {
-                msg: 'board',
-                board
-            });
-        }
+        let board = this.getBoard();
+        this.boardMap[p.id] = board;
+        p.send("Game-MSG", {
+            msg: 'board',
+            board
+        });
     }
 
     validatePlace(plr: Player, pos: number[]): string {
