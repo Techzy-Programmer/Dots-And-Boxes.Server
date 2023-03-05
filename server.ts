@@ -19,9 +19,9 @@ export abstract class Server {
         logLevel: 'error'
     });
     
-    static stalePlayers: Player[] = [];
-    static players: Player[] = [];
-    static games: Game[] = [];
+    static stalePlayers: Player[] = []; // Players that have been disconnected or not responding
+    static players: Player[] = []; // Active players
+    static games: Game[] = []; // All active game rooms
     static pIds: number = 0;
 
     static start() {
@@ -32,19 +32,22 @@ export abstract class Server {
         server.listen(PORT, () => Logger.log(Level.INFO,
             "Server Started", `On Port: ${PORT}`));
 
+        // Start the server and listen for incoming players connection
         server.on('connection', (pSock) => {
             const player = new Player(pSock, this.pIds++);
-            player.on("message", this.handleMSG.bind(this));
-            player.on("status", this.pushStatusUpdate.bind(this));
+            player.on("status", this.pushStatusUpdate);
+            player.on("message", this.handleMSG);
 
-            player.on("disconnected", () => {
+            player.on("disconnected", () => { // Player disconnected
                 try {
-                    player.switchState();
+                    player.switchState(); // Stall the player
                     let discPlr = this.players.indexOf(player);
+                    // Store the player object so that it can be revived if it gives
+                    // right secret token with correct authentication
+                    this.stalePlayers.push(player);
 
                     if (discPlr > -1) {
                         this.players.splice(discPlr, 1);
-                        this.stalePlayers.push(player);
                     }
                 } catch (e) {
                     Logger.log(Level.ERROR, e.toString());
@@ -80,44 +83,17 @@ export abstract class Server {
     private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
         switch (msg.type) {
-            case "Login":
+            case "Login": // [To-Do]: add logic to revive disconnected player
                 let uidEm = 'null';
                 if (typeof data.email == 'string') {
                     data.email = data.email.toLowerCase();
                     uidEm = Utils.hash(data.email);
                 }
 
-                const userDet = await this
-                    .dbGet(`users/${uidEm}`);
-
-                if (userDet !== null) {
-                    if (userDet.pass == data.pass) {
-                        let secId = plr.id;
-                        let secIp = plr.sock.remoteAddress;
-                        let secSalt = "JH(4gg*@bIU98*HdfdEUiue";
-                        const secret = Utils.hash(secId + secIp + secSalt);
-                        plr.postAuth(userDet.name, secret, uidEm);
-                        this.players.push(plr);
-
-                        this.broadcast('Joined', {
-                            name: userDet.name,
-                            id: plr.id
-                        }, plr);
-
-                        let plrsData: any[] = [];
-                        this.players.forEach((p) => {
-                            plrsData.push({
-                                id: p.id,
-                                name: p.name,
-                                status: p.status
-                            });
-                        });
-
-                        plr.send("Logged-In", {
-                            players: plrsData,
-                            id: plr.id,
-                            secret
-                        });
+                const userDet = await this.dbGet(`users/${uidEm}`);
+                if (userDet !== null) { // Okay user already registered!
+                    if (userDet.pass == data.pass) { // Authenticate password
+                        plr.postAuth(userDet.name, uidEm); // Authentication passed
                     }
                     else plr.send('Error', "Oops! That's not your valid login password.");
                     return;
@@ -138,16 +114,20 @@ export abstract class Server {
                         return;
                     }
 
+                    if (typeof data.email == 'string')
+                        data.email = data.email.toLowerCase();
+
                     if (!data.email || !Utils.isValidEmail(data.email)) {
                         plr.send('Error', "This email doesn't looks like a valid one, try again.", true);
                         return;
                     }
 
-                    if (typeof data.email == 'string')
-                        data.email = data.email.toLowerCase();
-                    let uidEM = Utils.hash(data.email);
+                    if (await this.dbGet(`users/${data.email}`) !== null) {
+                        plr.send('Error', "User already exists! Please login to continue.", true);
+                        return;
+                    }
 
-                    await this.dbSet(DBMode.WRITE, `users/${uidEm}`, {
+                    await this.dbSet(DBMode.WRITE, `users/${uidEm}`, { // Save user's data to db
                         email: data.email,
                         name: data.name,
                         pass: data.pass,
@@ -157,42 +137,50 @@ export abstract class Server {
                             won: 0
                         }
                     });
+
+                    plr.postAuth(data.name, data.email); // Registration complete
+                    return
                 }
+
+                plr.send('Error', "Access code is invalid!", true);
                 break;
 
-            case "Search":
+            case "Search": // Match-Making starts
                 Lobby.addFinder(plr, msg.gameId, msg.plrCount);
                 break;
 
-            case "Cancel-Search":
-                plr.switchStatus();
+            case "Cancel-Search": // Match-Making aborted
+                plr.switchStatus(); // Makes player idle
                 break;
 
-            default:
+            default: // Hmmm... something suspicious
                 plr.send("Error", "Invalid request!");
                 break;
         }
     }
 
-    private static async randomizeAccess() {
+    // Randomize access code everytime server restarts or new user registers
+    private static async randomizeAccess() { // While signing up user must provide right access code
         const code = parseInt(`${Math.random() * (999999 - 100000) + 100000}`);
         await this.dbSet(DBMode.WRITE, 'regAccessCode', code);
         writeFileSync('access.txt', code.toString());
     }
 
     private static pushStatusUpdate(exPlr: Player) {
-        this.broadcast('Status-Update', {
+        this.broadcast('Status-Update', { // Inform every other player about 'exPlr' new status
             status: exPlr.status,
             id: exPlr.id
         }, exPlr);
     }
 
-    private static broadcast(type: string, data: any, check: Player | Function = null) {
+    // Sends message of a given type and data to a subset of players based on the third parameter.
+    static broadcast(type: string, data: any, check?: Player | Function) {
         const isFunc = check instanceof Function;
         
         this.players.forEach((plr) => {
-            const proceed = check == null ||
-                (isFunc ? check(plr) : check !== plr);
+            // The optional 'check' parameter is used to determine which players should receive the message.
+            // If check is undefined, null, or any falsy value, the message will be sent to all players.
+            const proceed = !check || (isFunc ? check(plr) : check !== plr);
             if (proceed) plr.send(type, data);
         });
     }

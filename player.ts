@@ -1,5 +1,7 @@
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
+import { Utils } from './utility';
+import { Server } from './server';
 import { Socket } from "net";
 
 export class Player extends EventEmitter {
@@ -17,18 +19,46 @@ export class Player extends EventEmitter {
         super();
         this.id = id;
         this.sock = sock;
-        this.sock.on('data', this.handleData.bind(this));
+        this.sock.on('data', this.handleData);
         this.sock.on('error', () => this.emit('disconnected'));
         this.sock.on('close', () => this.emit('disconnected'));
         Logger.log(Level.INFO, `Player joined with ID = ${id}`,
             `IP:PORT = ${sock.remoteAddress}:${sock.remotePort}`);
     }
 
-    postAuth(name: string, sec: string, ref: string) {
-        this.dbRef = ref;
+    postAuth(name: string, uidEm: string) {
+        let secSalt = "JH(4gg*@bIU98*HdfdEUiue"; // Too salty
+        const secret = Utils.hash(`${this.id}-
+            ${this.sock.remoteAddress}-
+            ${Math.random()}-
+            ${Date.now()}-
+            ${secSalt}`);
+
+        Server.broadcast('Joined', { // Broadcast to all other players
+            name: name,
+            id: this.id
+        }, this);
+
+        let plrsData: any[] = [];
+        Server.players.forEach((p) => { // Gather data of all connected players
+            plrsData.push({
+                id: p.id,
+                name: p.name,
+                status: p.status
+            });
+        });
+
+        this.send("Logged-In", { // Send ack of auth success with gathered data
+            players: plrsData,
+            id: this.id,
+            secret
+        });
+
         this.name = name;
-        this.secret = sec;
+        this.dbRef = uidEm;
+        this.secret = secret;
         this.authenticated = true;
+        Server.players.push(this);
     }
 
     private handleData(raw: Buffer) {
@@ -39,17 +69,19 @@ export class Player extends EventEmitter {
             msg = JSON.parse(raw.toString());
             if (msg.type && typeof msg.type == 'string') errored = false;
         }
-        catch {
-
+        catch (ex) {
+            Logger.log(Level.ERROR, `Unexpected MSG received from ${this.name}`, ex.toString())
         }
 
-        if (errored) {
+        if (errored) { // Only proceed if data sent by connected client is a valid JSON string
             this.send('Error', "Request should be a JSON string having valid 'type' property.", true);
             return;
         }
 
+        // If player is sending game-data it must be authorized at first place
         if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
-        else if (this.authenticated || ['Login', 'Register'].includes(msg.typ)) this.emit("message", this, msg);
+        // If player is trying to authenticate or has been already authenticated then allow its request
+        else if (this.authenticated || ['Login', 'Register'].includes(msg.type)) this.emit("message", this, msg);
     }
 
     switchState(newSock: Socket = null) {
@@ -67,6 +99,7 @@ export class Player extends EventEmitter {
         }
     }
 
+    // Change game-play status of the player
     switchStatus(playing: boolean = false) {
         if (playing) {
             this.status = 'playing';
@@ -74,21 +107,22 @@ export class Player extends EventEmitter {
         else {
             if (this.status == 'idle')
                 this.status = 'searching';
-            else if (this.status == 'searching')
-                this.status = 'idle';
+            else this.status = 'idle';
         }
 
-        this.emit("status", this);
+        this.emit("status", this); // This triggers status-broadcast to all connected players
         Logger.log(Level.INFO, `Switched ${this.name}'s status to ${this.status}`);
     }
 
     send(type: string, data: any, bypass: boolean = false) {
+        // 'bypass' should be used only if we want to send message to un-authorised user
         if ((bypass || this.authenticated) && this.alive && this.sock.readyState == "open") {
             const msg = { type, data };
             this.sock.write(JSON.stringify(msg), (e) => {
                 Logger.log(Level.ERROR, `Socket Write(Send) failed`, e.toString());
             });
         } else {
+            // Something's not good with the player lets log it
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
                 `bypass : authenticated = ${bypass} : ${this.authenticated}`,
                 `alive : readyState = ${this.alive} : ${this.sock.readyState}`);

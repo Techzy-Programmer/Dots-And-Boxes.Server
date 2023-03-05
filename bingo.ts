@@ -10,16 +10,19 @@ export class BingoGame extends Game {
     }
 
     private start() {
+        // Loop through all players in current game and
+        // run the logic function on them one by one
         this.processAll((p: Player) =>
             this.logic.setPlayer(p));
 
         this.onMessage((p, data) => {
-            const msg = new BingoMSG(p, data);
+            const msg = new BingoMSG(p, data); // Convert JSON msg to class object
             this.processMsg(msg);
         });
     }
 
     private processMsg(msg: BingoMSG) {
+        // [To-Do]: handle message
         switch (msg.type) {
             case "Turn":
                 break;
@@ -27,7 +30,7 @@ export class BingoGame extends Game {
             case "Chat":
                 break;
 
-            default:
+            default: // [To-Do]: implement logging
                 break;
         }
     }
@@ -76,12 +79,15 @@ class BingoLogic {
     }
 
     validatePlace(plr: Player, pos: number[]): string {
+        // If indexes of 2d point of gameboard is not in range 0 to 4 then it's invalid
+        // also if the value at the 2d point is already used then player is probable trying to cheat.
         if (!this.validatePosition(pos) || this.gmap[plr.id][pos[0]][pos[1]] !== 0) {
             return "";
         }
 
         this.gmap[plr.id][pos[0]][pos[1]]++;
         return this.boardMap[plr.id][pos[0] + pos[1]];
+        // Increment 2d value at given board position and return value at that position
     }
 
     private validatePosition(pos: number[]): boolean {
@@ -94,6 +100,7 @@ class BingoLogic {
     }
 
     private getBoard(): string[] {
+        // Shuffle the array and return a random board
         return this.numsStr.sort(() =>
             (Math.random() - 0.5));
     }

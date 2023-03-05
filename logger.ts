@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import { basename } from 'path';
 
-export enum Level {
+export enum Level { // Level of logging
     ERROR,
     WARN,
     INFO
@@ -22,25 +22,27 @@ export abstract class Logger {
         this.isLocal = local;
     }
 
+    // Main logging happens here
     static log(type: Level, ...data) {
-        const e = new Error();
+        // Lets detect who called this Logger.log function
+        const e = new Error(); // Using error object
         const regex = /\((.*):(\d+):(\d+)\)$/;
         const match = regex.exec(e.stack.split("\n")[2]);
         const file = basename(match[1]);
         const column = match[3];
         const line = match[2];
 
-        const nowDt = (new Date())
-            .toLocaleString('en-GB', { hour12: true });
+        // Get Date & Time at which this log happens
+        const nowDt = (new Date()).toLocaleString('en-GB', { hour12: true });
 
-        const logObj = {
+        const logObj = { // Build a logging object
             caller: `file(${file}) line(${line}) column(${column})`,
             type: Level[type],
             time: nowDt,
             data
         };
 
-        if (this.isLocal) {
+        if (this.isLocal) { // Whether to display log to console directly
             let clr = '';
             let rset = '%s\x1b[0m';
 
@@ -51,6 +53,8 @@ export abstract class Logger {
             return;
         }
 
+        // Or to write it up in a '.json' file
+
         let jsLog: Array<any> = [];
         const lPath = `${this.logDir}/dataLogs.json`;
 
@@ -59,11 +63,12 @@ export abstract class Logger {
             jsLog = JSON.parse(jsData);
         }
         catch {
-
+            // Don't know why this has occured
+            // I think I shoud not log this
         }
 
         jsLog.push(logObj);
         fs.writeFileSync(lPath,
-            JSON.stringify(jsLog, null, 2));
+            JSON.stringify(jsLog, null, 2)); // Done
     }
 }
