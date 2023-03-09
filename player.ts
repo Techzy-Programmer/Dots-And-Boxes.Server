@@ -1,7 +1,7 @@
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
 import { Utils } from './utility';
-import { Server } from './server';
+import { Master } from './master';
 import { Socket } from "net";
 
 export class Player extends EventEmitter {
@@ -34,13 +34,13 @@ export class Player extends EventEmitter {
             ${Date.now()}-
             ${secSalt}`);
 
-        Server.broadcast('Joined', { // Broadcast to all other players
+        Master.broadcast('Joined', { // Broadcast to all other players
             name: name,
             id: this.id
         }, this);
 
         let plrsData: any[] = [];
-        Server.players.forEach((p) => { // Gather data of all connected players
+        Master.players.forEach((p) => { // Gather data of all connected players
             plrsData.push({
                 id: p.id,
                 name: p.name,
@@ -58,7 +58,7 @@ export class Player extends EventEmitter {
         this.dbRef = uidEm;
         this.secret = secret;
         this.authenticated = true;
-        Server.players.push(this);
+        Master.players.push(this);
     }
 
     private handleData(raw: Buffer) {

@@ -13,7 +13,8 @@ export enum DBMode {
     REMOVE
 }
 
-export abstract class Server {
+export abstract class Master
+{
     static db = new AceBase('dab-db', {
         storage: { path: __dirname },
         logLevel: 'error'

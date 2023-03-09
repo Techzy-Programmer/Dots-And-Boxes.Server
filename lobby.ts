@@ -1,6 +1,6 @@
 import { BingoGame } from './bingo';
 import { Player } from './player';
-import { Server } from './server';
+import { Master } from './master';
 
 export abstract class Lobby {
     static finders: { [id: number]: Player[] } = {};
@@ -40,7 +40,7 @@ export abstract class Lobby {
             game.on("start", () => this.handleGameStart(game));
             game.on('update', () => this.handleGameUpdate(game));
             game.on('end', () => this.handleGameEnd(game));
-            Server.games.push(game); // Update global games list
+            Master.games.push(game); // Update global games list
         }
     }
 

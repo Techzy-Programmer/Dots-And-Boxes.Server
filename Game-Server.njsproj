@@ -51,7 +51,7 @@
       <SubType>Code</SubType>
     </TypeScriptCompile>
     <TypeScriptCompile Include="player.ts" />
-    <TypeScriptCompile Include="server.ts" />
+    <TypeScriptCompile Include="master.ts" />
     <TypeScriptCompile Include="utility.ts">
       <SubType>Code</SubType>
     </TypeScriptCompile>
