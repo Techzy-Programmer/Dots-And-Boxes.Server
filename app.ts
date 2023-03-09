@@ -1,4 +1,4 @@
-import { Master } from './server';
+import { Master } from './master';
 import { Logger } from './logger';
 
 process.chdir(__dirname); // Just to fix bugs on some file systems

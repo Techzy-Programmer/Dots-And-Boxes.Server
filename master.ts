@@ -1,10 +1,10 @@
+import { Server } from 'ws';
 import { Game } from './game';
 import { Lobby } from './lobby';
 import { Utils } from './utility';
 import { Player } from './player';
 import { AceBase } from 'acebase';
 import { writeFileSync } from 'fs';
-import { createServer } from "net";
 import { Level, Logger } from './logger';
 
 export enum DBMode {
@@ -26,14 +26,10 @@ export abstract class Master
     static pIds: number = 0;
 
     static start() {
-        const PORT = 8080;
+        const port = parseInt(process.env.PORT) || 8080;
+        const server = new Server({ port });
         this.randomizeAccess();
-        // process.env.PORT || 8080
-        const server = createServer();
-        server.listen(PORT, () => Logger.log(Level.INFO,
-            "Server Started", `On Port: ${PORT}`));
 
-        // Start the server and listen for incoming players connection
         server.on('connection', (pSock) => {
             const player = new Player(pSock, this.pIds++);
             player.on("status", this.pushStatusUpdate);
@@ -55,6 +51,8 @@ export abstract class Master
                 }
             });
         });
+
+        Logger.log(Level.INFO, "Server Started", `On Port: ${port}`);
     }
 
     static async dbGet(path: string): Promise<any> {

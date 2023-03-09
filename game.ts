@@ -20,7 +20,7 @@ export class Game extends EventEmitter {
         for (var p = 0; p < plrs.length; p++) {
             const plr = plrs[p];
             plr.switchStatus(true);
-            plainSess += plr.sock.remoteAddress; // Let's make the session unique
+            plainSess += plr.id + plr.name; // Let's make the session unique
             const opl = plrs.filter((p) => p != plr); // Get all opponents of curent user
             this.opponent[plr.id] = opl; // And save the (player id => opponents[]) mapping
         }
