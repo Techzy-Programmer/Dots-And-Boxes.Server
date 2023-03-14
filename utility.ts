@@ -19,7 +19,7 @@ export abstract class Utils {
 
     static hash(plain: string, method: string = 'sha256') {
         const salt = "as98rt39ui34qw12";
-        return createHmac('sha256', salt).update(plain).digest('hex');
+        return createHmac(method, salt).update(plain).digest('hex');
     }
 
 }

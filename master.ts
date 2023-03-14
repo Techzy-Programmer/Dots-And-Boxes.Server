@@ -3,8 +3,8 @@ import { Game } from './game';
 import { Lobby } from './lobby';
 import { Utils } from './utility';
 import { Player } from './player';
-import { AceBase } from 'acebase';
 import { writeFileSync } from 'fs';
+import * as admin from 'firebase-admin';
 import { Level, Logger } from './logger';
 
 export enum DBMode {
@@ -15,19 +15,22 @@ export enum DBMode {
 
 export abstract class Master
 {
-    static db = new AceBase('dab-db', {
-        storage: { path: __dirname },
-        logLevel: 'error'
-    });
-    
+    static db: admin.database.Database; // Firebase database object reference
     static stalePlayers: Player[] = []; // Players that have been disconnected or not responding
     static players: Player[] = []; // Active players
     static games: Game[] = []; // All active game rooms
     static pIds: number = 0;
 
-    static start() {
+    static async start() {
+        const databaseURL = "https://db-gamerzer-default-rtdb.asia-southeast1.firebasedatabase.app";
+        const baseBuff = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT, 'base64');
+        const serviceAccount = JSON.parse(baseBuff.toString('utf8'));
+        const credential = admin.credential.cert(serviceAccount);
+        admin.initializeApp({ credential, databaseURL });
+
         const port = parseInt(process.env.PORT) || 8080;
         const server = new Server({ port });
+        this.db = admin.database();
         this.randomizeAccess();
 
         server.on('connection', (pSock) => {
@@ -82,17 +85,17 @@ export abstract class Master
     private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
         switch (msg.type) {
-            case "Login": // [To-Do]: add logic to revive disconnected player
-                let uidEm = 'null';
+            case "Login": { // [To-Do]: add logic to revive disconnected player
+                let emDbRefLog = 'null';
                 if (typeof data.email == 'string') {
                     data.email = data.email.toLowerCase();
-                    uidEm = Utils.hash(data.email);
+                    emDbRefLog = Utils.hash(data.email, 'md5');
                 }
 
-                const userDet = await this.dbGet(`users/${uidEm}`);
+                const userDet = await this.dbGet(`users/${emDbRefLog}`);
                 if (userDet !== null) { // Okay user already registered!
                     if (userDet.pass == data.pass) { // Authenticate password
-                        plr.postAuth(userDet.name, uidEm); // Authentication passed
+                        plr.postAuth(userDet.name, emDbRefLog); // Authentication passed
                     }
                     else plr.send('Error', "Oops! That's not your valid login password.");
                     return;
@@ -100,8 +103,9 @@ export abstract class Master
 
                 plr.send('Error', "Please register first to continue");
                 break;
+            }
 
-            case "Register":
+            case "Register": {
                 if (await this.dbGet('regAccessCode') == data.access) {
                     if (data.name.length < 5) {
                         plr.send('Error', "Name is too short, it should be at least 4 characters long.", true);
@@ -126,15 +130,12 @@ export abstract class Master
                         return;
                     }
 
-                    await this.dbSet(DBMode.WRITE, `users/${uidEm}`, { // Save user's data to db
+                    const emDbRefSig = Utils.hash(data.email, 'md5');
+                    await this.dbSet(DBMode.WRITE, `users/${emDbRefSig}`, { // Save user's data to db
                         email: data.email,
                         name: data.name,
                         pass: data.pass,
-                        game: {
-                            total: 0,
-                            lost: 0,
-                            won: 0
-                        }
+                        game: {}
                     });
 
                     plr.postAuth(data.name, data.email); // Registration complete
@@ -143,13 +144,14 @@ export abstract class Master
 
                 plr.send('Error', "Access code is invalid!", true);
                 break;
+            }
 
             case "Search": // Match-Making starts
                 Lobby.addFinder(plr, msg.gameId, msg.plrCount);
                 break;
 
             case "Cancel-Search": // Match-Making aborted
-                plr.switchStatus(); // Makes player idle
+                Lobby.removeFinder(plr);
                 break;
 
             default: // Hmmm... something suspicious

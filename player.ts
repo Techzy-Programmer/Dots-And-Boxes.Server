@@ -9,7 +9,6 @@ export class Player extends EventEmitter {
     dbRef: string;
     secret: string;
     id: number = -1;
-    gnum: number = -1;
     alive: boolean = true;
     authenticated: boolean;
     status: String = "idle";
@@ -25,7 +24,7 @@ export class Player extends EventEmitter {
         Logger.log(Level.INFO, `Player joined with ID = ${id}`);
     }
 
-    postAuth(name: string, uidEm: string) {
+    postAuth(name: string, emDbRef: string) {
         let secSalt = "JH(4gg*@bIU98*HdfdEUiue"; // Too salty
         const secret = Utils.hash(`${this.id}-
             ${this.sock.url}-
@@ -54,7 +53,7 @@ export class Player extends EventEmitter {
         });
 
         this.name = name;
-        this.dbRef = uidEm;
+        this.dbRef = emDbRef;
         this.secret = secret;
         this.authenticated = true;
         Master.players.push(this);
@@ -89,12 +88,12 @@ export class Player extends EventEmitter {
             this.sock = null;
             this.status = 'idle';
             this.authenticated = false;
-            Logger.log(Level.INFO, `Player(${this.name}) Stalled`);
+            Logger.log(Level.INFO, `Player(${this.name || this.id}) Stalled`);
         }
         else if (newSock != null) {
             this.alive = true;
             this.sock = newSock;
-            Logger.log(Level.INFO, `Player(${this.name}) Revived`)
+            Logger.log(Level.INFO, `Player(${this.name || this.id}) Revived`)
         }
     }
 
