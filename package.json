@@ -8,7 +8,7 @@
     "email": "rishabh.kumar.pro@gmail.com"
   },
   "scripts": {
-    "start": "node app.js",
+    "start": "node build/app.js",
     "build": "tsc --build",
     "clean": "tsc --build --clean"
   },
