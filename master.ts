@@ -1,9 +1,8 @@
-import { Server } from 'ws';
 import { Game } from './game';
 import { Lobby } from './lobby';
 import { Utils } from './utility';
 import { Player } from './player';
-import { writeFileSync } from 'fs';
+import { WebSocketServer } from 'ws';
 import * as admin from 'firebase-admin';
 import { Level, Logger } from './logger';
 
@@ -29,37 +28,28 @@ export abstract class Master
         admin.initializeApp({ credential, databaseURL });
 
         const port = parseInt(process.env.PORT) || 8080;
-        const server = new Server({ port });
+        const server = new WebSocketServer({ port });
         this.db = admin.database();
-        this.randomizeAccess();
+        // this.randomizeAccess();
 
         server.on('connection', (pSock) => {
             const player = new Player(pSock, this.pIds++);
-            player.on("status", this.pushStatusUpdate);
-            player.on("message", this.handleMSG);
-
-            player.on("disconnected", () => { // Player disconnected
-                try {
-                    player.switchState(); // Stall the player
-                    let discPlr = this.players.indexOf(player);
-                    // Store the player object so that it can be revived if it gives
-                    // right secret token with correct authentication
-                    this.stalePlayers.push(player);
-
-                    if (discPlr > -1) {
-                        this.players.splice(discPlr, 1);
-                    }
-                } catch (e) {
-                    Logger.log(Level.ERROR, e.toString());
-                }
-            });
+            player.on("status", this.pushStatusUpdate.bind(this));
+            player.on("message", this.handleMSG.bind(this));
         });
 
         Logger.log(Level.INFO, "Server Started", `On Port: ${port}`);
     }
 
-    static async dbGet(path: string): Promise<any> {
-        const snap = await this.db.ref(path).get();
+    static async dbGet(path: string, orderKey?, orderValue?): Promise<any> {
+        const ref = await this.db.ref(path);
+        let snap: admin.database.DataSnapshot;
+
+        if (orderKey && orderValue)
+            snap = await ref.orderByChild(orderKey)
+                .equalTo(orderValue).get();
+        else snap = await ref.get();
+
         if (!snap.exists()) return null;
         else return snap.val();
     }
@@ -84,9 +74,28 @@ export abstract class Master
 
     private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
+
         switch (msg.type) {
             case "Login": { // [To-Do]: add logic to revive disconnected player
                 let emDbRefLog = 'null';
+
+                if (data.sess && typeof data.sess == 'string') {
+                    const qryData = await this.dbGet('/users', 'session', data.sess);
+                    if (qryData) {
+                        const dref = Object.keys(qryData)[0];
+                        const userDObj = qryData[dref];
+
+                        if (parseInt(userDObj.session.split('|')[1]) > Date.now()) {
+                            if (!userDObj.isBlocked) plr.postAuth(userDObj.name, dref);
+                            else plr.send('Warn', "Your are blocked by admin", true);
+                            return;
+                        }
+                    }
+
+                    plr.send('Warn', "Session expired! login again", true);
+                    return;
+                }
+
                 if (typeof data.email == 'string') {
                     data.email = data.email.toLowerCase();
                     emDbRefLog = Utils.hash(data.email, 'md5');
@@ -94,21 +103,32 @@ export abstract class Master
 
                 const userDet = await this.dbGet(`users/${emDbRefLog}`);
                 if (userDet !== null) { // Okay user already registered!
-                    if (userDet.pass == data.pass) { // Authenticate password
-                        plr.postAuth(userDet.name, emDbRefLog); // Authentication passed
+                    if (userDet.pass === Utils.hash(data.pass)) { // Authenticate password
+                        if (!userDet.isBlocked) plr.postAuth(userDet.name, emDbRefLog); // Authentication passed
+                        else plr.send('Warn', "Your are blocked by admin", true);
                     }
-                    else plr.send('Error', "Oops! That's not your valid login password.");
+                    else plr.send('Error', "Oh! It's wrong login password.", true);
                     return;
                 }
 
-                plr.send('Error', "Please register first to continue");
+                plr.send('Error', "Please register first to continue", true);
                 break;
             }
 
             case "Register": {
                 if (await this.dbGet('regAccessCode') == data.access) {
-                    if (data.name.length < 5) {
+                    if (!data.name || !data.email || !data.pass) {
+                        plr.send('Error', "Invalid or Malformed request.", true);
+                        return;
+                    }
+
+                    if (data.name.length < 4) {
                         plr.send('Error', "Name is too short, it should be at least 4 characters long.", true);
+                        return;
+                    }
+
+                    if (data.name.length > 20) {
+                        plr.send('Error', "Name is too long, it must not exceed 20 characters.", true);
                         return;
                     }
 
@@ -125,26 +145,33 @@ export abstract class Master
                         return;
                     }
 
-                    if (await this.dbGet(`users/${data.email}`) !== null) {
+                    const emDbRefSig = Utils.hash(data.email, 'md5');
+
+                    if (await this.dbGet(`users/${emDbRefSig}`) !== null) {
                         plr.send('Error', "User already exists! Please login to continue.", true);
                         return;
                     }
 
-                    const emDbRefSig = Utils.hash(data.email, 'md5');
                     await this.dbSet(DBMode.WRITE, `users/${emDbRefSig}`, { // Save user's data to db
+                        pass: Utils.hash(data.pass),
                         email: data.email,
                         name: data.name,
-                        pass: data.pass,
-                        game: {}
+                        isBlocked: false
                     });
 
-                    plr.postAuth(data.name, data.email); // Registration complete
+                    this.randomizeAccess(); // Generate and save new access code so that new user can't register directly with same access code
+                    plr.postAuth(data.name, emDbRefSig); // Registration complete
                     return
                 }
 
                 plr.send('Error', "Access code is invalid!", true);
                 break;
             }
+
+            case "Logout":
+                await Master.dbSet(DBMode.UPDATE, `users/${plr.dbRef}`, { session: 'null|0' });
+                plr.fireDisconnection(true);
+                break;
 
             case "Search": // Match-Making starts
                 Lobby.addFinder(plr, msg.gameId, msg.plrCount);
@@ -164,7 +191,6 @@ export abstract class Master
     private static async randomizeAccess() { // While signing up user must provide right access code
         const code = parseInt(`${Math.random() * (999999 - 100000) + 100000}`);
         await this.dbSet(DBMode.WRITE, 'regAccessCode', code);
-        writeFileSync('access.txt', code.toString());
     }
 
     private static pushStatusUpdate(exPlr: Player) {

@@ -1,13 +1,13 @@
+import { DBMode, Master } from './master';
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
 import { Utils } from './utility';
-import { Master } from './master';
 import WebSocket = require('ws');
 
 export class Player extends EventEmitter {
     name: string;
     dbRef: string;
-    secret: string;
+    session: string;
     id: number = -1;
     alive: boolean = true;
     authenticated: boolean;
@@ -18,15 +18,15 @@ export class Player extends EventEmitter {
         super();
         this.id = id;
         this.sock = sock;
-        this.sock.on('data', this.handleData);
+        this.sock.on('message', this.handleData.bind(this));
         this.sock.on('error', () => this.emit('disconnected'));
-        this.sock.on('close', () => this.emit('disconnected'));
+        this.sock.on('close', this.fireDisconnection.bind(this));
         Logger.log(Level.INFO, `Player joined with ID = ${id}`);
     }
 
     postAuth(name: string, emDbRef: string) {
         let secSalt = "JH(4gg*@bIU98*HdfdEUiue"; // Too salty
-        const secret = Utils.hash(`${this.id}-
+        let session = Utils.hash(`${this.id}-
             ${this.sock.url}-
             ${Math.random()}-
             ${Date.now()}-
@@ -46,20 +46,25 @@ export class Player extends EventEmitter {
             });
         });
 
-        this.send("Logged-In", { // Send ack of auth success with gathered data
-            players: plrsData,
-            id: this.id,
-            secret
-        });
+        let expiry = Date.now() + 604800000;
+        session += `|${expiry}`;
 
         this.name = name;
         this.dbRef = emDbRef;
-        this.secret = secret;
+        this.session = session;
         this.authenticated = true;
         Master.players.push(this);
+        Master.dbSet(DBMode.UPDATE, `users/${this.dbRef}`, { session });
+
+        this.send("Logged-In", { // Send ack of auth success with gathered data
+            players: plrsData,
+            id: this.id,
+            session,
+            name
+        });
     }
 
-    private handleData(raw: Buffer) {
+    private handleData(raw: WebSocket.RawData) {
         let msg: any;
         let errored: boolean = true;
 
@@ -82,18 +87,36 @@ export class Player extends EventEmitter {
         else if (this.authenticated || ['Login', 'Register'].includes(msg.type)) this.emit("message", this, msg);
     }
 
-    switchState(newSock: WebSocket.WebSocket = null) {
+    switchState(newSock: WebSocket.WebSocket = null, isPassive = false) {
         if (this.alive && this.sock != null) {
-            this.alive = false;
-            this.sock = null;
             this.status = 'idle';
             this.authenticated = false;
-            Logger.log(Level.INFO, `Player(${this.name || this.id}) Stalled`);
+
+            if (!isPassive) {
+                this.sock = null;
+                this.alive = false;
+            }
+
+            Logger.log(Level.INFO, `Player(${this.name || this.id}) ${isPassive ? 'Logged Out' : 'Stalled'}`);
         }
         else if (newSock != null) {
             this.alive = true;
             this.sock = newSock;
             Logger.log(Level.INFO, `Player(${this.name || this.id}) Revived`)
+        }
+    }
+
+    fireDisconnection(passive = false) {
+        try {
+            // [To-Do] remove from lobby if searching for game
+            this.switchState(null, passive); // Stall the player
+            let discPlr = Master.players.indexOf(this);
+            // Store the player object so that it can be revived if it gives
+            // right secret token with correct authentication
+            Master.stalePlayers.push(this);
+            if (discPlr > -1) Master.players.splice(discPlr, 1);
+        } catch (e) {
+            Logger.log(Level.ERROR, e.toString());
         }
     }
 
@@ -116,10 +139,7 @@ export class Player extends EventEmitter {
         // 'bypass' should be used only if we want to send message to un-authorised user
         if ((bypass || this.authenticated) && this.alive && this.sock.readyState == 1) {
             const msg = { type, data };
-            this.sock.send(JSON.stringify(msg), (e) => {
-                Logger.log(Level.ERROR, `Socket Write(Send) failed`,
-                    `Name:Message = ${e.name}:${e.message}`);
-            });
+            this.sock.send(JSON.stringify(msg));
         } else {
             // Something's not good with the player lets log it
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
