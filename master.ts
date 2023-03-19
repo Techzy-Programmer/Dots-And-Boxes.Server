@@ -1,6 +1,6 @@
 import { Game } from './game';
 import { Lobby } from './lobby';
-import { Utils } from './utility';
+import { Utility } from './utility';
 import { Player } from './player';
 import { WebSocketServer } from 'ws';
 import * as admin from 'firebase-admin';
@@ -27,10 +27,9 @@ export abstract class Master
         const credential = admin.credential.cert(serviceAccount);
         admin.initializeApp({ credential, databaseURL });
 
-        const port = parseInt(process.env.PORT) || 8080;
+        const port = parseInt(process.env.PORT) || 8844;
         const server = new WebSocketServer({ port });
         this.db = admin.database();
-        // this.randomizeAccess();
 
         server.on('connection', (pSock) => {
             const player = new Player(pSock, this.pIds++);
@@ -72,6 +71,18 @@ export abstract class Master
         }
     }
 
+    // Sends message of a given type and data to a subset of players based on the third parameter.
+    static broadcast(type: string, data: any, check?: Player | Function) {
+        const isFunc = check instanceof Function;
+
+        this.players.forEach((plr) => {
+            // The optional 'check' parameter is used to determine which players should receive the message.
+            // If check is undefined, null, or any falsy value, the message will be sent to all players.
+            const proceed = !check || (isFunc ? check(plr) : check !== plr);
+            if (proceed) plr.send(type, data);
+        });
+    }
+
     private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
 
@@ -98,12 +109,12 @@ export abstract class Master
 
                 if (typeof data.email == 'string') {
                     data.email = data.email.toLowerCase();
-                    emDbRefLog = Utils.hash(data.email, 'md5');
+                    emDbRefLog = Utility.hash(data.email, 'md5');
                 }
 
                 const userDet = await this.dbGet(`users/${emDbRefLog}`);
                 if (userDet !== null) { // Okay user already registered!
-                    if (userDet.pass === Utils.hash(data.pass)) { // Authenticate password
+                    if (userDet.pass === Utility.hash(data.pass)) { // Authenticate password
                         if (!userDet.isBlocked) plr.postAuth(userDet.name, emDbRefLog); // Authentication passed
                         else plr.send('Warn', "Your are blocked by admin", true);
                     }
@@ -132,7 +143,7 @@ export abstract class Master
                         return;
                     }
 
-                    if (Utils.isValidPassword(data.pass)) {
+                    if (Utility.isValidPassword(data.pass)) {
                         plr.send('Error', "Paswword should be alphanumeric having at least 8 characters including special characters", true);
                         return;
                     }
@@ -140,12 +151,12 @@ export abstract class Master
                     if (typeof data.email == 'string')
                         data.email = data.email.toLowerCase();
 
-                    if (!data.email || !Utils.isValidEmail(data.email)) {
+                    if (!data.email || !Utility.isValidEmail(data.email)) {
                         plr.send('Error', "This email doesn't looks like a valid one, try again.", true);
                         return;
                     }
 
-                    const emDbRefSig = Utils.hash(data.email, 'md5');
+                    const emDbRefSig = Utility.hash(data.email, 'md5');
 
                     if (await this.dbGet(`users/${emDbRefSig}`) !== null) {
                         plr.send('Error', "User already exists! Please login to continue.", true);
@@ -153,7 +164,7 @@ export abstract class Master
                     }
 
                     await this.dbSet(DBMode.WRITE, `users/${emDbRefSig}`, { // Save user's data to db
-                        pass: Utils.hash(data.pass),
+                        pass: Utility.hash(data.pass),
                         email: data.email,
                         name: data.name,
                         isBlocked: false
@@ -174,10 +185,13 @@ export abstract class Master
                 break;
 
             case "Search": // Match-Making starts
-                Lobby.addFinder(plr, msg.gameId, msg.plrCount);
+                if (Lobby.addFinder(plr, data.gameId, data.plrCount))
+                    plr.send("Goto-Lobby");
+                else plr.send("Lobby-Cancel");
                 break;
 
             case "Cancel-Search": // Match-Making aborted
+                plr.send("Search-Cancelled");
                 Lobby.removeFinder(plr);
                 break;
 
@@ -198,17 +212,5 @@ export abstract class Master
             status: exPlr.status,
             id: exPlr.id
         }, exPlr);
-    }
-
-    // Sends message of a given type and data to a subset of players based on the third parameter.
-    static broadcast(type: string, data: any, check?: Player | Function) {
-        const isFunc = check instanceof Function;
-        
-        this.players.forEach((plr) => {
-            // The optional 'check' parameter is used to determine which players should receive the message.
-            // If check is undefined, null, or any falsy value, the message will be sent to all players.
-            const proceed = !check || (isFunc ? check(plr) : check !== plr);
-            if (proceed) plr.send(type, data);
-        });
     }
 }

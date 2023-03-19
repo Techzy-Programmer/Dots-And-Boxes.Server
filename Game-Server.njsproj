@@ -55,6 +55,9 @@
     </TypeScriptCompile>
     <TypeScriptCompile Include="player.ts" />
     <TypeScriptCompile Include="master.ts" />
+    <TypeScriptCompile Include="rmcs.ts">
+      <SubType>Code</SubType>
+    </TypeScriptCompile>
     <TypeScriptCompile Include="utility.ts">
       <SubType>Code</SubType>
     </TypeScriptCompile>

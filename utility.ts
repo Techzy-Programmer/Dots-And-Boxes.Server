@@ -1,10 +1,15 @@
 import { createHmac } from 'crypto';
 
-export abstract class Utils {
+export abstract class Utility {
     static validator(predicate: Function) {
         return function (value) {
             return predicate(value);
         }
+    }
+
+    static wait(millis: number) {
+        return new Promise(resolve =>
+            setTimeout(resolve, millis));
     }
 
     static isValidPassword(password: string) {
@@ -21,5 +26,4 @@ export abstract class Utils {
         const salt = "as98rt39ui34qw12";
         return createHmac(method, salt).update(plain).digest('hex');
     }
-
 }

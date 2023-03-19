@@ -46,7 +46,7 @@ export abstract class Logger {
             let clr = '';
             let rset = '%s\x1b[0m';
 
-            if (type == Level.INFO) clr = '\x1b[37m';
+            if (type == Level.INFO) clr = '\x1b[36m';
             else if (type == Level.WARN) clr = '\x1b[33m';
             else if (type == Level.ERROR) clr = '\x1b[31m';
             console.log(clr + rset, JSON.stringify(logObj, null, 2));

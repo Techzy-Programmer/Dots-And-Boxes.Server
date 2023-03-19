@@ -5,8 +5,30 @@ export class BingoGame extends Game {
     private logic = new BingoLogic();
 
     constructor(...plrs: Player[]) {
+        /*
+         * [To-Do] Dispose game properly
+         * Broadcast that game has now ended
+         * Remove all listners like (Player.on())
+         * Make variables null & remove reference from Master.games[]
+        */
+
         super("Bingo", ...plrs);
-        this.start();
+        // this.start();
+
+        this.all.forEach(p => p.on("disconnected", () => {
+            p.on("respawn", (rspTok) => {
+                if (rspTok === this.respawnToken) {
+                    // Okay! Now Resume the game
+                }
+            });
+
+            /*
+             * [To-Do] Pause this game room
+             * Wait for player to respawn within next 5 minutes
+             * Respawn based on same respawn token given to each player of this game
+             * End the game if player doesn't respawns in 5 minutes
+            */
+        }));
     }
 
     private start() {

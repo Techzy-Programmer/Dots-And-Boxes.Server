@@ -1,8 +1,9 @@
 import { DBMode, Master } from './master';
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
-import { Utils } from './utility';
+import { Utility } from './utility';
 import WebSocket = require('ws');
+import { Lobby } from './lobby';
 
 export class Player extends EventEmitter {
     name: string;
@@ -13,20 +14,41 @@ export class Player extends EventEmitter {
     authenticated: boolean;
     status: String = "idle";
     sock: WebSocket.WebSocket;
+    private pingTOut: NodeJS.Timeout;
 
     constructor(sock: WebSocket.WebSocket, id: number) {
         super();
         this.id = id;
         this.sock = sock;
         this.sock.on('message', this.handleData.bind(this));
-        this.sock.on('error', () => this.emit('disconnected'));
+        this.sock.on('error', this.fireDisconnection.bind(this));
         this.sock.on('close', this.fireDisconnection.bind(this));
+        this.pingTOut = setTimeout(() => this.pingKill(), 10 * 1000);
         Logger.log(Level.INFO, `Player joined with ID = ${id}`);
     }
 
-    postAuth(name: string, emDbRef: string) {
+    async postAuth(name: string, emDbRef: string) {
+        let plrsData: any[] = [];
+
+        for (var i = 0; i < Master.players.length; i++) {
+            const testPlr = Master.players[i];
+
+            if (testPlr.dbRef === emDbRef) {
+                // Looks like user logged in on same browser but on different tab
+                testPlr.send("Session-Cancelled");
+                testPlr.sock.close();
+                await Utility.wait(1000);
+            }
+
+            plrsData.push({
+                id: testPlr.id,
+                name: testPlr.name,
+                status: testPlr.status
+            });
+        }
+
         let secSalt = "JH(4gg*@bIU98*HdfdEUiue"; // Too salty
-        let session = Utils.hash(`${this.id}-
+        let session = Utility.hash(`${this.id}-
             ${this.sock.url}-
             ${Math.random()}-
             ${Date.now()}-
@@ -36,15 +58,6 @@ export class Player extends EventEmitter {
             name: name,
             id: this.id
         }, this);
-
-        let plrsData: any[] = [];
-        Master.players.forEach((p) => { // Gather data of all connected players
-            plrsData.push({
-                id: p.id,
-                name: p.name,
-                status: p.status
-            });
-        });
 
         let expiry = Date.now() + 604800000;
         session += `|${expiry}`;
@@ -64,32 +77,8 @@ export class Player extends EventEmitter {
         });
     }
 
-    private handleData(raw: WebSocket.RawData) {
-        let msg: any;
-        let errored: boolean = true;
-
-        try {
-            msg = JSON.parse(raw.toString());
-            if (msg.type && typeof msg.type == 'string') errored = false;
-        }
-        catch (ex) {
-            Logger.log(Level.ERROR, `Unexpected MSG received from ${this.name}`, ex.toString())
-        }
-
-        if (errored) { // Only proceed if data sent by connected client is a valid JSON string
-            this.send('Error', "Request should be a JSON string having valid 'type' property.", true);
-            return;
-        }
-
-        // If player is sending game-data it must be authorized at first place
-        if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
-        // If player is trying to authenticate or has been already authenticated then allow its request
-        else if (this.authenticated || ['Login', 'Register'].includes(msg.type)) this.emit("message", this, msg);
-    }
-
-    switchState(newSock: WebSocket.WebSocket = null, isPassive = false) {
+    switchState(newSock: WebSocket.WebSocket = null, isPassive = false, rspTok = "N/A") {
         if (this.alive && this.sock != null) {
-            this.status = 'idle';
             this.authenticated = false;
 
             if (!isPassive) {
@@ -97,26 +86,14 @@ export class Player extends EventEmitter {
                 this.alive = false;
             }
 
+            if (this.status != 'playing') this.status = 'idle';
             Logger.log(Level.INFO, `Player(${this.name || this.id}) ${isPassive ? 'Logged Out' : 'Stalled'}`);
         }
         else if (newSock != null) {
             this.alive = true;
             this.sock = newSock;
+            if (this.status == "playing") this.emit('respawn', rspTok);
             Logger.log(Level.INFO, `Player(${this.name || this.id}) Revived`)
-        }
-    }
-
-    fireDisconnection(passive = false) {
-        try {
-            // [To-Do] remove from lobby if searching for game
-            this.switchState(null, passive); // Stall the player
-            let discPlr = Master.players.indexOf(this);
-            // Store the player object so that it can be revived if it gives
-            // right secret token with correct authentication
-            Master.stalePlayers.push(this);
-            if (discPlr > -1) Master.players.splice(discPlr, 1);
-        } catch (e) {
-            Logger.log(Level.ERROR, e.toString());
         }
     }
 
@@ -135,7 +112,33 @@ export class Player extends EventEmitter {
         Logger.log(Level.INFO, `Switched ${this.name}'s status to ${this.status}`);
     }
 
-    send(type: string, data: any, bypass: boolean = false) {
+    fireDisconnection(passive = false) {
+        try {
+            this.emit("disconnected");
+
+            if (this.status == 'playing') {
+                // [To-Do] Implement game notifier
+                // Using .emit('disconnected') and on('disconnectd')
+            }
+
+            if (this.status == 'searching') {
+                Lobby.removeFinder(this);
+            }
+
+            clearTimeout(this.pingTOut);
+            this.switchState(null, passive); // Stall the player
+            let discPlr = Master.players.indexOf(this);
+            // Store the player object so that it can be revived if it gives
+            // right secret token with correct authentication
+            Master.stalePlayers.push(this);
+            if (discPlr > -1) Master.players.splice(discPlr, 1);
+            Master.broadcast("Left", { id: this.id });
+        } catch (e) {
+            Logger.log(Level.ERROR, e.toString());
+        }
+    }
+
+    send(type: string, data?: any, bypass: boolean = false) {
         // 'bypass' should be used only if we want to send message to un-authorised user
         if ((bypass || this.authenticated) && this.alive && this.sock.readyState == 1) {
             const msg = { type, data };
@@ -144,7 +147,45 @@ export class Player extends EventEmitter {
             // Something's not good with the player lets log it
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
                 `bypass : authenticated = ${bypass} : ${this.authenticated}`,
-                `alive : readyState = ${this.alive} : ${this.sock.readyState}`);
+                `alive : readyState = ${this.alive} : ${this.sock.readyState}`,
+                `Type: ${type} || MyID: ${this.id}`);
         }
+    }
+
+    private handleData(raw: WebSocket.RawData) {
+        let msg: any;
+        let errored: boolean = true;
+        let strRaw = raw.toString();
+
+        if (strRaw === "Ping") {
+            this.sock.send("Pong");
+            clearTimeout(this.pingTOut);
+            this.pingTOut = setTimeout(() =>
+                this.pingKill(), 10 * 1000);
+            return;
+        }
+
+        try {
+            msg = JSON.parse(strRaw);
+            if (msg.type && typeof msg.type == 'string') errored = false;
+        }
+        catch (ex) {
+            Logger.log(Level.ERROR, `Unexpected MSG received from ${this.name}`, ex.toString())
+        }
+
+        if (errored) { // Only proceed if data sent by connected client is a valid JSON string
+            this.send('Error', "Request should be a JSON string having valid 'type' property.", true);
+            return;
+        }
+
+        // If player is sending game-data it must be authorized at first place
+        if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
+        // If player is trying to authenticate or has been already authenticated then allow its request
+        else if (this.authenticated || ['Login', 'Register'].includes(msg.type)) this.emit("message", this, msg);
+    }
+
+    private pingKill() {
+        this.sock.close();
+        Logger.log(Level.WARN, `Ping Timed Out for Player(${this.name || this.id})`);
     }
 }

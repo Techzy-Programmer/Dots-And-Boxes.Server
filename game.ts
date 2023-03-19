@@ -1,13 +1,13 @@
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
-import { createHash } from 'crypto';
 import { Player } from './player';
+import { Utility } from './utility';
 
 export class Game extends EventEmitter {
     private msgListners: Array<((plr: Player, data: any) => void)> = []; // Custom event implementation
     opponent: { [id: number]: Player[] } = {}; // Player to it's all opponent map
     private hasStarted: boolean = false;
-    session: string = "";
+    respawnToken: string = "";
     all: Player[] = [];
     name: string = "";
 
@@ -15,24 +15,26 @@ export class Game extends EventEmitter {
         super();
         this.all = plrs;
         this.name = gmName;
-        let plainSess = "-";
+        let plainToken = "-";
 
         for (var p = 0; p < plrs.length; p++) {
             const plr = plrs[p];
             plr.switchStatus(true);
-            plainSess += plr.id + plr.name; // Let's make the session unique
+            plainToken += plr.id + plr.name; // Let's make the session unique
             const opl = plrs.filter((p) => p != plr); // Get all opponents of curent user
             this.opponent[plr.id] = opl; // And save the (player id => opponents[]) mapping
         }
 
-        const salt = Math.floor(Math.random() * (500 - 1 + 1)) + 1; // Quite salty here
-        this.session = createHash('md5').update(plainSess + salt.toString()).digest('hex');
+        let randomFactor = Math.random();
+        const salt = "r1$h@6H-=++g^@m^3r^2eR"; // Looks quite salty
+        this.respawnToken = Utility.hash(`${plainToken}@${salt}#${randomFactor}`);
         Logger.log(Level.INFO, `${this.name} Game-Table Created`, `Players (${[...plrs]})`);
         this.initialize(); // Basic setup done let's start
     }
 
     private initialize() {
         let pIds = {};
+        let ackAll = new Set(); // Using Set to determine unique acknowledgement
 
         // Dictionary of all players to be sent to each of the connected player
         for (var i = 0; i < this.all.length; i++) {
@@ -41,7 +43,6 @@ export class Game extends EventEmitter {
         }
 
         this.processAll((p: Player) => {
-            let ackAll = new Set(); // Using Set to determine unique acknowledgement
 
             p.on('game-msg', (data) => {
                 if (data.type == "Ack") {
@@ -49,7 +50,7 @@ export class Game extends EventEmitter {
 
                     if (ackAll.size == this.all.length) { // all acknowledgement received
                         this.hasStarted = true;
-                        this.emit('start'); // Notify lobby that this game has now been started
+                        this.emit('start'); // Notify lobby that this game has now started
                     }
 
                     return;
@@ -63,9 +64,9 @@ export class Game extends EventEmitter {
             });
 
             p.send("Game-MSG", { // Players should send ack after receiving this
-                session: this.session,
-                players: pIds,
-                msg: "Found"
+                rspTok: this.respawnToken,
+                msg: "Send-ACK",
+                players: pIds
             });
         });
     }
