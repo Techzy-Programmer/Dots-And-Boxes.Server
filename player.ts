@@ -1,3 +1,4 @@
+import { Reference } from 'firebase-admin/database';
 import { DBMode, Master } from './master';
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
@@ -14,6 +15,7 @@ export class Player extends EventEmitter {
     authenticated: boolean;
     status: String = "idle";
     sock: WebSocket.WebSocket;
+    private blockDBRef: Reference;
     private pingTOut: NodeJS.Timeout;
 
     constructor(sock: WebSocket.WebSocket, id: number) {
@@ -28,6 +30,7 @@ export class Player extends EventEmitter {
     }
 
     async postAuth(name: string, emDbRef: string) {
+        this.blockDBRef = Master.db.ref(`users/${emDbRef}/isBlocked`);
         let plrsData: any[] = [];
 
         for (var i = 0; i < Master.players.length; i++) {
@@ -68,6 +71,15 @@ export class Player extends EventEmitter {
         this.authenticated = true;
         Master.players.push(this);
         Master.dbSet(DBMode.UPDATE, `users/${this.dbRef}`, { session });
+
+        this.blockDBRef.on("value", async (snap) => {
+            const hasBlocked = snap.val();
+            if (hasBlocked) {
+                this.send("Blocked");
+                await Utility.wait(500);
+                this.sock.close();
+            }
+        });
 
         this.send("Logged-In", { // Send ack of auth success with gathered data
             players: plrsData,
@@ -126,6 +138,7 @@ export class Player extends EventEmitter {
             }
 
             clearTimeout(this.pingTOut);
+            this.blockDBRef.off("value");
             this.switchState(null, passive); // Stall the player
             let discPlr = Master.players.indexOf(this);
             // Store the player object so that it can be revived if it gives

@@ -41,7 +41,7 @@ export abstract class Master
     }
 
     static async dbGet(path: string, orderKey?, orderValue?): Promise<any> {
-        const ref = await this.db.ref(path);
+        const ref = this.db.ref(path);
         let snap: admin.database.DataSnapshot;
 
         if (orderKey && orderValue)
@@ -91,7 +91,7 @@ export abstract class Master
                 let emDbRefLog = 'null';
 
                 if (data.sess && typeof data.sess == 'string') {
-                    const qryData = await this.dbGet('/users', 'session', data.sess);
+                    const qryData = await this.dbGet('users', 'session', data.sess);
                     if (qryData) {
                         const dref = Object.keys(qryData)[0];
                         const userDObj = qryData[dref];
