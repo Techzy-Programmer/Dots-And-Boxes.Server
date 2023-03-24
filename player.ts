@@ -192,7 +192,7 @@ export class Player extends EventEmitter {
         }
 
         // If player is sending game-data it must be authorized at first place
-        if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg);
+        if (this.authenticated && msg.type == 'Game-MSG') this.emit('game-msg', msg.data);
         // If player is trying to authenticate or has been already authenticated then allow its request
         else if (this.authenticated || ['Login', 'Register'].includes(msg.type)) this.emit("message", this, msg);
     }

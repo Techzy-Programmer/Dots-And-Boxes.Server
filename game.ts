@@ -11,7 +11,7 @@ export class Game extends EventEmitter {
     all: Player[] = [];
     name: string = "";
 
-    constructor(gmName: string, ...plrs: Player[]){
+    constructor(gmName: string, ...plrs: Player[]) {
         super();
         this.all = plrs;
         this.name = gmName;
@@ -33,22 +33,23 @@ export class Game extends EventEmitter {
     }
 
     private initialize() {
-        let pIds = {};
+        let pIds = [];
         let ackAll = new Set(); // Using Set to determine unique acknowledgement
 
         // Dictionary of all players to be sent to each of the connected player
         for (var i = 0; i < this.all.length; i++) {
             const curPlr = this.all[i];
-            pIds[curPlr.id] = curPlr.name;
+            pIds.push(curPlr.id);
         }
 
         this.processAll((p: Player) => {
-
             p.on('game-msg', (data) => {
-                if (data.type == "Ack") {
+                if (data.msg == "Ack") {
                     ackAll.add(p.id);
 
                     if (ackAll.size == this.all.length) { // all acknowledgement received
+                        Logger.log(Level.INFO, `All Acknowledgement received for Game ${this.name}`);
+                        this.processAll((p: Player) => p.send("Game-MSG", { msg: "Goto-Game" }));
                         this.hasStarted = true;
                         this.emit('start'); // Notify lobby that this game has now started
                     }
