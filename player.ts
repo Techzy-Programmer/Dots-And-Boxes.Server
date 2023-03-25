@@ -138,7 +138,7 @@ export class Player extends EventEmitter {
             }
 
             clearTimeout(this.pingTOut);
-            this.blockDBRef.off("value");
+            this.blockDBRef?.off("value");
             this.switchState(null, passive); // Stall the player
             let discPlr = Master.players.indexOf(this);
             // Store the player object so that it can be revived if it gives
