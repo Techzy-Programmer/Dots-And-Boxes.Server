@@ -26,7 +26,6 @@ export class Player extends EventEmitter {
         this.sock.on('error', this.fireDisconnection.bind(this));
         this.sock.on('close', this.fireDisconnection.bind(this));
         this.pingTOut = setTimeout(() => this.pingKill(), 10 * 1000);
-        Logger.log(Level.INFO, `Player joined with ID = ${id}`);
     }
 
     async postAuth(name: string, emDbRef: string) {
@@ -87,6 +86,8 @@ export class Player extends EventEmitter {
             session,
             name
         });
+
+        Logger.log(Level.INFO, `${name} joined with ID = ${this.id}`);
     }
 
     switchState(newSock: WebSocket.WebSocket = null, isPassive = false, rspTok = "N/A") {
@@ -99,13 +100,13 @@ export class Player extends EventEmitter {
             }
 
             if (this.status != 'playing') this.status = 'idle';
-            Logger.log(Level.INFO, `Player(${this.name || this.id}) ${isPassive ? 'Logged Out' : 'Stalled'}`);
+            if (this.name) Logger.log(Level.INFO, `${this.name} ${isPassive ? 'Logged Out' : 'Stalled'}`);
         }
         else if (newSock != null) {
             this.alive = true;
             this.sock = newSock;
             if (this.status == "playing") this.emit('respawn', rspTok);
-            Logger.log(Level.INFO, `Player(${this.name || this.id}) Revived`)
+            Logger.log(Level.INFO, `${this.name} Revived`)
         }
     }
 
@@ -121,7 +122,7 @@ export class Player extends EventEmitter {
         }
 
         this.emit("status", this); // This triggers status-broadcast to all connected players
-        Logger.log(Level.INFO, `Switched ${this.name}'s status to ${this.status}`);
+        Logger.log(Level.INFO, `${this.name} is now ${this.status}`);
     }
 
     fireDisconnection(passive = false) {
@@ -146,6 +147,7 @@ export class Player extends EventEmitter {
             Master.stalePlayers.push(this);
             if (discPlr > -1) Master.players.splice(discPlr, 1);
             Master.broadcast("Left", { id: this.id });
+            if (Master.players.length == 0) Master.pIds = 0;
         } catch (e) {
             Logger.log(Level.ERROR, e.toString());
         }
@@ -161,7 +163,7 @@ export class Player extends EventEmitter {
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
                 `bypass : authenticated = ${bypass} : ${this.authenticated}`,
                 `alive : readyState = ${this.alive} : ${this.sock.readyState}`,
-                `Type: ${type} || MyID: ${this.id}`);
+                `MSG-Type: ${type} || My-ID: ${this.id}`);
         }
     }
 
@@ -183,7 +185,7 @@ export class Player extends EventEmitter {
             if (msg.type && typeof msg.type == 'string') errored = false;
         }
         catch (ex) {
-            Logger.log(Level.ERROR, `Unexpected MSG received from ${this.name}`, ex.toString())
+            Logger.log(Level.ERROR, `Unexpected MSG received from ${this.name || this.id}`, ex.toString())
         }
 
         if (errored) { // Only proceed if data sent by connected client is a valid JSON string
@@ -199,6 +201,6 @@ export class Player extends EventEmitter {
 
     private pingKill() {
         this.sock.close();
-        Logger.log(Level.WARN, `Ping Timed Out for Player(${this.name || this.id})`);
+        if (this.name) Logger.log(Level.WARN, `Ping Timed Out for Player(${this.name})`);
     }
 }
