@@ -40,6 +40,7 @@ export abstract class Lobby {
     // Called whenever player withdraws request for matchmaking
     static removeFinder(plr: Player) {
         plr.switchStatus(); // Makes player idle
+        if (!(plr.id in this.plrsMap)) return;
         const plrSearchData = this.plrsMap[plr.id];
         let numSearch = plrSearchData[1];
         let gmSearch = plrSearchData[0];

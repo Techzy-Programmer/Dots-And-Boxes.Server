@@ -138,18 +138,22 @@ export class Player extends EventEmitter {
                 Lobby.removeFinder(this);
             }
 
+            this.switchState(null, passive); // Stall the player
+        }
+        catch (e) {
+            Logger.log(Level.ERROR, e.toString());
+        }
+        finally {
             clearTimeout(this.pingTOut);
             this.blockDBRef?.off("value");
-            this.switchState(null, passive); // Stall the player
-            let discPlr = Master.players.indexOf(this);
+
             // Store the player object so that it can be revived if it gives
             // right secret token with correct authentication
+            let discPlr = Master.players.indexOf(this);
             Master.stalePlayers.push(this);
             if (discPlr > -1) Master.players.splice(discPlr, 1);
             Master.broadcast("Left", { id: this.id });
             if (Master.players.length == 0) Master.pIds = 0;
-        } catch (e) {
-            Logger.log(Level.ERROR, e.toString());
         }
     }
 
