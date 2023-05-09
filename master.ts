@@ -2,7 +2,9 @@ import { Game } from './game';
 import { Lobby } from './lobby';
 import { Utility } from './utility';
 import { Player } from './player';
-import { WebSocketServer } from 'ws';
+import { Server } from 'ws';
+import { readFileSync } from 'fs';
+import { createServer } from 'https';
 import * as admin from 'firebase-admin';
 import { Level, Logger } from './logger';
 
@@ -27,8 +29,13 @@ export abstract class Master
         const credential = admin.credential.cert(serviceAccount);
         admin.initializeApp({ credential, databaseURL });
 
+        const sslServer = createServer({
+            key: readFileSync('private.key'),
+            cert: readFileSync('certificate.crt')
+        });
+
         const port = parseInt(process.env.PORT) || 8844;
-        const server = new WebSocketServer({ port });
+        const server = new Server({ server: sslServer });
         this.db = admin.database();
 
         server.on('connection', (pSock) => {
@@ -37,6 +44,7 @@ export abstract class Master
             player.on("message", this.handleMSG.bind(this));
         });
 
+        sslServer.listen(port);
         Logger.log(Level.INFO, "Server Started", `On Port: ${port}`);
     }
 
