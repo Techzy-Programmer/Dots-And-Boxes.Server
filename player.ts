@@ -32,9 +32,7 @@ export class Player extends EventEmitter {
         this.blockDBRef = Master.db.ref(`users/${emDbRef}/isBlocked`);
         let plrsData: any[] = [];
 
-        for (var i = 0; i < Master.players.length; i++) {
-            const testPlr = Master.players[i];
-
+        for (const testPlr of Master.players) {
             if (testPlr.dbRef === emDbRef) {
                 // Looks like user logged in on same browser but on different tab
                 testPlr.send("Session-Cancelled");
@@ -68,7 +66,7 @@ export class Player extends EventEmitter {
         this.dbRef = emDbRef;
         this.session = session;
         this.authenticated = true;
-        Master.players.push(this);
+        Master.players.add(this);
         Master.dbSet(DBMode.UPDATE, `users/${this.dbRef}`, { session });
 
         this.blockDBRef.on("value", async (snap) => {
@@ -149,11 +147,10 @@ export class Player extends EventEmitter {
 
             // Store the player object so that it can be revived if it gives
             // right secret token with correct authentication
-            let discPlr = Master.players.indexOf(this);
-            Master.stalePlayers.push(this);
-            if (discPlr > -1) Master.players.splice(discPlr, 1);
+            Master.stalePlayers.add(this);
+            if (Master.players.has(this)) Master.players.delete(this);
             Master.broadcast("Left", { id: this.id });
-            if (Master.players.length == 0) Master.pIds = 0;
+            if (Master.players.size === 0) Master.pIds = 0;
         }
     }
 
@@ -205,6 +202,7 @@ export class Player extends EventEmitter {
 
     private pingKill() {
         this.sock.close();
+        this.fireDisconnection();
         if (this.name) Logger.log(Level.WARN, `Ping Timed Out for Player(${this.name})`);
     }
 }

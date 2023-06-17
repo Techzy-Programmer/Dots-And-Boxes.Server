@@ -4,7 +4,8 @@ import { Utility } from './utility';
 import { Player } from './player';
 import { Server } from 'ws';
 import { readFileSync } from 'fs';
-import { createServer } from 'https';
+import { createServer as csHttp } from 'http';
+import { createServer as csHttps } from 'https';
 import * as admin from 'firebase-admin';
 import { Level, Logger } from './logger';
 
@@ -17,9 +18,9 @@ export enum DBMode {
 export abstract class Master
 {
     static db: admin.database.Database; // Firebase database object reference
-    static stalePlayers: Player[] = []; // Players that have been disconnected or not responding
-    static players: Player[] = []; // Active players
-    static games: Game[] = []; // All active game rooms
+    static stalePlayers: Set<Player> = new Set(); // Players that have been disconnected or not responding
+    static players: Set<Player> = new Set(); // Active players
+    static games: Set<Game> = new Set(); // All active game rooms
     static pIds: number = 0;
 
     static async start() {
@@ -27,13 +28,16 @@ export abstract class Master
         const baseBuff = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT, 'base64');
         const serviceAccount = JSON.parse(baseBuff.toString('utf8'));
         const credential = admin.credential.cert(serviceAccount);
+        const isProd = process.env.NODE_ENV === 'production';
         admin.initializeApp({ credential, databaseURL });
 
-        const sslServer = createServer({
+        const sslCert = isProd ? {
             key: readFileSync('private.key'),
             cert: readFileSync('certificate.crt')
-        });
+        } : {};
 
+        console.log(`Running in ${isProd ? "Production" : "Development"} mode!`);
+        const sslServer = isProd ? csHttps(sslCert) : csHttp();
         const port = parseInt(process.env.PORT) || 8844;
         const server = new Server({ server: sslServer });
         this.db = admin.database();
@@ -83,12 +87,12 @@ export abstract class Master
     static broadcast(type: string, data: any, check?: Player | Function) {
         const isFunc = check instanceof Function;
 
-        this.players.forEach((plr) => {
+        for (const plr of this.players) {
             // The optional 'check' parameter is used to determine which players should receive the message.
             // If check is undefined, null, or any falsy value, the message will be sent to all players.
             const proceed = !check || (isFunc ? check(plr) : check !== plr);
             if (proceed) plr.send(type, data);
-        });
+        }
     }
 
     private static async handleMSG(plr: Player, msg: any) {

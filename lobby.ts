@@ -94,7 +94,7 @@ export abstract class Lobby {
             game.on("start", () => this.handleGameStart(game));
             game.on('update', () => this.handleGameUpdate(game));
             game.on('end', () => this.handleGameEnd(game));
-            Master.games.push(game); // Update global games list
+            Master.games.add(game); // Update global games list
             roomPlrs.length = 0; // Reset the watch variable
         }
     }
