@@ -11,6 +11,7 @@ export class Player extends EventEmitter {
     dbRef: string;
     session: string;
     id: number = -1;
+    gameProps: any = {};
     alive: boolean = true;
     authenticated: boolean;
     status: String = "idle";
@@ -166,6 +167,11 @@ export class Player extends EventEmitter {
                 `alive : readyState = ${this.alive} : ${this.sock.readyState}`,
                 `MSG-Type: ${type} || My-ID: ${this.id}`);
         }
+    }
+
+    gsend(msg: string, data?: any) {
+        const gmObj = { msg, data };
+        this.send("Game-MSG", gmObj);
     }
 
     private handleData(raw: WebSocket.RawData) {

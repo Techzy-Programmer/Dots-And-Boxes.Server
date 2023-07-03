@@ -44,17 +44,17 @@ export class Game extends EventEmitter {
 
         this.processAll((p: Player) => {
             p.on('game-msg', (data) => {
+
                 if (data.msg == "Ack") {
                     ackAll.add(p.id);
 
                     if (ackAll.size == this.all.length) { // all acknowledgement received
+                        this.processAll((p: Player) => p.gsend("Goto-Game", { plrIds: pIds }));
                         Logger.log(Level.INFO, `All Acknowledgement received for Game ${this.name}`);
-                        this.processAll((p: Player) => p.send("Game-MSG", { msg: "Goto-Game" }));
                         this.hasStarted = true;
+                        data.msg = 'Safe-Init';
                         this.emit('start'); // Notify lobby that this game has now started
                     }
-
-                    return;
                 }
 
                 if (this.hasStarted) {
@@ -64,11 +64,7 @@ export class Game extends EventEmitter {
                 }
             });
 
-            p.send("Game-MSG", { // Players should send ack after receiving this
-                rspTok: this.respawnToken,
-                msg: "Send-ACK",
-                players: pIds
-            });
+            p.gsend("Send-ACK", { rspTok: this.respawnToken }); // Players should send ack after receiving this
         });
     }
 
@@ -86,5 +82,10 @@ export class Game extends EventEmitter {
         this.all.forEach((p) => {
             funcOperator(p);
         });
+    }
+
+    broadcast(msg: string, data?: any, except: Player[] = []) {
+        this.processAll((p: Player) => !(except.includes(p))
+            && p.send("Game-MSG", { msg, data }));
     }
 }
