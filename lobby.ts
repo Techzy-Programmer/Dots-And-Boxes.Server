@@ -1,8 +1,8 @@
 import { BingoGame } from './bingo';
 import { Player } from './player';
 import { Master } from './master';
-import { Game } from './game';
 import { RMCSGame } from './rmcs';
+import { Game } from './game';
 
 export abstract class Lobby {
     static plrsMap: { [id: number]: [string, number] } = {};

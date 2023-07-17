@@ -1,7 +1,7 @@
 import { Level, Logger } from './logger';
 import { EventEmitter } from 'events';
-import { Player } from './player';
 import { Utility } from './utility';
+import { Player } from './player';
 
 export class Game extends EventEmitter {
     private msgListners: Array<((plr: Player, data: any) => void)> = []; // Custom event implementation
@@ -44,24 +44,46 @@ export class Game extends EventEmitter {
 
         this.processAll((p: Player) => {
             p.on('game-msg', (data) => {
+                function spinLatency(pingPlr: Player) {
+                    setTimeout(() => pingPlr.gsend("Server-TS", {
+                        svrTS: Date.now()
+                    }), 500);
+                }
 
                 if (data.msg == "Ack") {
                     ackAll.add(p.id);
 
                     if (ackAll.size == this.all.length) { // all acknowledgement received
-                        this.processAll((p: Player) => p.gsend("Goto-Game", { plrIds: pIds }));
+                        this.processAll((ackPlr: Player) => {
+                            ackPlr.gsend("Goto-Game", { plrIds: pIds })
+                            spinLatency(ackPlr);
+                        });
+
                         Logger.log(Level.INFO, `All Acknowledgement received for Game ${this.name}`);
-                        this.hasStarted = true;
-                        data.msg = 'Safe-Init';
-                        this.emit('start'); // Notify lobby that this game has now started
+                        this.hasStarted = true; data.msg = 'Safe-Init';
+                        this.emit('start'); // Notify lobby
                     }
                 }
+                else if (data.msg == "Client-TS") {
+                    const tsData = data.data;
+                    let svrTS = tsData?.svrTS;
+                    let clTS = tsData?.clTS;
 
-                if (this.hasStarted) {
-                    this.msgListners.forEach((callback) => {
-                        callback(p, data); // Send the received data to the child class
-                    });
+                    if (typeof svrTS === 'number' && typeof clTS === 'number') {
+                        p.gsend("Server-ACK-TS", {
+                            svrAckTS: Date.now(),
+                            svrTS,
+                            clTS
+                        });
+
+                        spinLatency(p);
+                    }
+                    return;
                 }
+
+                if (this.hasStarted)
+                    // Send the received data to the child class
+                    this.msgListners.forEach((callback) => callback(p, data));
             });
 
             p.gsend("Send-ACK", { rspTok: this.respawnToken }); // Players should send ack after receiving this

@@ -37,9 +37,7 @@ export abstract class Logger {
 
         const logObj = { // Build a logging object
             caller: `file(${file}) line(${line}) column(${column})`,
-            type: Level[type],
-            time: nowDt,
-            data
+            time: nowDt, type: Level[type], data
         };
 
         if (this.isLocal) { // Whether to display log to console directly

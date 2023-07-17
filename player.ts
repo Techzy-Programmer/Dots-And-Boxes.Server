@@ -18,6 +18,7 @@ export class Player extends EventEmitter {
     sock: WebSocket.WebSocket;
     private blockDBRef: Reference;
     private pingTOut: NodeJS.Timeout;
+    private readonly pingTime: number = 15;
 
     constructor(sock: WebSocket.WebSocket, id: number) {
         super();
@@ -26,7 +27,7 @@ export class Player extends EventEmitter {
         this.sock.on('message', this.handleData.bind(this));
         this.sock.on('error', this.fireDisconnection.bind(this));
         this.sock.on('close', this.fireDisconnection.bind(this));
-        this.pingTOut = setTimeout(() => this.pingKill(), 10 * 1000);
+        this.pingTOut = setTimeout(() => this.pingKill(), this.pingTime * 1000);
     }
 
     async postAuth(name: string, emDbRef: string) {
@@ -157,14 +158,13 @@ export class Player extends EventEmitter {
 
     send(type: string, data?: any, bypass: boolean = false) {
         // 'bypass' should be used only if we want to send message to un-authorised user
-        if ((bypass || this.authenticated) && this.alive && this.sock.readyState == 1) {
-            const msg = { type, data };
-            this.sock.send(JSON.stringify(msg));
-        } else {
+        if ((bypass || this.authenticated) && this.alive && this.sock?.readyState === 1)
+            this.sock.send(JSON.stringify({ type, data }));
+        else {
             // Something's not good with the player lets log it
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
+                `alive : readyState = ${this.alive} : ${this.sock?.readyState}`,
                 `bypass : authenticated = ${bypass} : ${this.authenticated}`,
-                `alive : readyState = ${this.alive} : ${this.sock.readyState}`,
                 `MSG-Type: ${type} || My-ID: ${this.id}`);
         }
     }
@@ -180,10 +180,13 @@ export class Player extends EventEmitter {
         let strRaw = raw.toString();
 
         if (strRaw === "Ping") {
-            this.sock.send("Pong");
-            clearTimeout(this.pingTOut);
-            this.pingTOut = setTimeout(() =>
-                this.pingKill(), 10 * 1000);
+            if (this.sock) {
+                this.sock.send("Pong");
+                clearTimeout(this.pingTOut);
+                this.pingTOut = setTimeout(() =>
+                    this.pingKill(), this.pingTime * 1000);
+            }
+            else clearTimeout(this.pingTOut);
             return;
         }
 

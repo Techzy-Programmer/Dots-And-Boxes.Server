@@ -1,13 +1,13 @@
+import { Server } from 'ws';
 import { Game } from './game';
 import { Lobby } from './lobby';
-import { Utility } from './utility';
-import { Player } from './player';
-import { Server } from 'ws';
 import { readFileSync } from 'fs';
-import { createServer as csHttp } from 'http';
-import { createServer as csHttps } from 'https';
+import { Player } from './player';
+import { Utility } from './utility';
 import * as admin from 'firebase-admin';
 import { Level, Logger } from './logger';
+import { createServer as csHttp } from 'http';
+import { createServer as csHttps } from 'https';
 
 export enum DBMode {
     WRITE,
@@ -140,7 +140,8 @@ export abstract class Master
 
             case "Register": {
                 if (await this.dbGet('regAccessCode') == data.access) {
-                    if (!data.name || !data.email || !data.pass) {
+                    if (!data.name || !data.email || !data.pass || typeof data.name !== 'string'
+                        || typeof data.email !== 'string' || typeof data.pass !== 'string') {
                         plr.send('Error', "Invalid or Malformed request.", true);
                         return;
                     }
@@ -155,19 +156,19 @@ export abstract class Master
                         return;
                     }
 
-                    if (Utility.isValidPassword(data.pass)) {
-                        plr.send('Error', "Paswword should be alphanumeric having at least 8 characters including special characters", true);
+                    if (!Utility.isValidPassword(data.pass)) {
+                        plr.send('Error', "Password should be alphanumeric, with at least 8 characters, including special characters.", true);
                         return;
                     }
-
-                    if (typeof data.email == 'string')
-                        data.email = data.email.toLowerCase();
 
                     if (!data.email || !Utility.isValidEmail(data.email)) {
                         plr.send('Error', "This email doesn't looks like a valid one, try again.", true);
                         return;
                     }
 
+                    data.name = data.name.trim();
+                    data.email = data.email.trim();
+                    data.email = data.email.toLowerCase();
                     const emDbRefSig = Utility.hash(data.email, 'md5');
 
                     if (await this.dbGet(`users/${emDbRefSig}`) !== null) {
