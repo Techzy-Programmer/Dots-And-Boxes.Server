@@ -4,18 +4,18 @@ import { Game } from './game';
 export class BingoGame extends Game {
     private logic = new BingoLogic();
 
-    constructor(...plrs: Player[]) {
+    constructor(gCode: string, ...plrs: Player[]) {
         /*
-         * [To-Do] Dispose game properly
+         * ToDo: Dispose game properly
          * Broadcast that game has now ended
          * Remove all listners like (Player.on())
          * Make variables null & remove reference from Master.games[]
         */
 
-        super("Bingo", ...plrs);
+        super(gCode, "Bingo", ...plrs);
         // this.start();
 
-        this.all.forEach(p => p.on("disconnected", () => {
+        this.allPlrs.forEach(p => p.on("disconnected", () => {
             p.on("respawn", (rspTok) => {
                 if (rspTok === this.respawnToken) {
                     // Okay! Now Resume the game
@@ -23,7 +23,7 @@ export class BingoGame extends Game {
             });
 
             /*
-             * [To-Do] Pause this game room
+             * ToDo: Pause this game room
              * Wait for player to respawn within next 5 minutes
              * Respawn based on same respawn token given to each player of this game
              * End the game if player doesn't respawns in 5 minutes
@@ -44,7 +44,7 @@ export class BingoGame extends Game {
     }
 
     private processMsg(msg: BingoMSG) {
-        // [To-Do]: handle message
+        // ToDo: handle message
         switch (msg.type) {
             case "Turn":
                 break;
@@ -52,7 +52,7 @@ export class BingoGame extends Game {
             case "Chat":
                 break;
 
-            default: // [To-Do]: implement logging
+            default: // ToDo: implement logging
                 break;
         }
     }

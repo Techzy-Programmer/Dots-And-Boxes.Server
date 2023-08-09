@@ -6,6 +6,9 @@ import { Utility } from './utility';
 import WebSocket = require('ws');
 import { Lobby } from './lobby';
 
+type Status = "idle" | "searching" | "playing";
+const allowedQueueType = ['Quit'];
+
 export class Player extends EventEmitter {
     name: string;
     dbRef: string;
@@ -14,8 +17,11 @@ export class Player extends EventEmitter {
     gameProps: any = {};
     alive: boolean = true;
     authenticated: boolean;
-    status: String = "idle";
+    status: Status = "idle";
     sock: WebSocket.WebSocket;
+
+    private boundHandleMsg;
+    private boundHandleDisc;
     private blockDBRef: Reference;
     private pingTOut: NodeJS.Timeout;
     private readonly pingTime: number = 15;
@@ -24,52 +30,81 @@ export class Player extends EventEmitter {
         super();
         this.id = id;
         this.sock = sock;
-        this.sock.on('message', this.handleData.bind(this));
-        this.sock.on('error', this.fireDisconnection.bind(this));
-        this.sock.on('close', this.fireDisconnection.bind(this));
+        this.boundHandleDisc = () => this.fireDisconnection.call(this);
+        this.boundHandleMsg = (r: WebSocket.RawData) => this.handleData.call(this, r);
         this.pingTOut = setTimeout(() => this.pingKill(), this.pingTime * 1000);
+        this.subscribe();
     }
 
-    async postAuth(name: string, emDbRef: string) {
+    subscribe() {
+        this.sock.on('message', this.boundHandleMsg);
+        this.sock.on('error', this.boundHandleDisc);
+        this.sock.on('close', this.boundHandleDisc);
+    }
+
+    async postAuth(name: string, emDbRef: string, queue?: object, respawned: boolean = false) {
         this.blockDBRef = Master.db.ref(`users/${emDbRef}/isBlocked`);
         let plrsData: any[] = [];
+        this.dbRef = emDbRef;
 
         for (const testPlr of Master.players) {
             if (testPlr.dbRef === emDbRef) {
                 // Looks like user logged in on same browser but on different tab
                 testPlr.send("Session-Cancelled");
-                testPlr.sock.close();
+                testPlr.sock?.close();
                 await Utility.wait(1000);
             }
 
             plrsData.push({
-                id: testPlr.id,
+                id: testPlr.dbRef,
                 name: testPlr.name,
                 status: testPlr.status
             });
         }
 
+        const parsedQueueItems = [];
+
+        if (queue) {
+            for (const key in queue) {
+                const qItem = queue[key];
+                if (allowedQueueType.includes(qItem.type)) {
+                    this.emit("message", qItem.data);
+                    parsedQueueItems.push(key);
+                }
+            }
+        }
+
+        Master.players.add(this);
         let secSalt = "JH(4gg*@bIU98*HdfdEUiue"; // Too salty
-        let session = Utility.hash(`${this.id}-
-            ${this.sock.url}-
+        let session = Utility.hash(`${this.dbRef}-
+            ${this.sock?.url}-
             ${Math.random()}-
             ${Date.now()}-
             ${secSalt}`);
 
         Master.broadcast('Joined', { // Broadcast to all other players
-            name: name,
-            id: this.id
+            id: this.dbRef,
+            name: name
         }, this);
 
+        const discTDel = (Date.now() - this.gameProps.__discTime) / (60 * 1000);
+        let respawnFactor = Number.parseInt(`${Math.random() * 100000000}`);
+        let wasPlaying = this.status === 'playing' && discTDel <= 4;
         let expiry = Date.now() + 604800000;
+        let gcode = '-', gname = '-';
         session += `|${expiry}`;
 
         this.name = name;
-        this.dbRef = emDbRef;
         this.session = session;
         this.authenticated = true;
-        Master.players.add(this);
         Master.dbSet(DBMode.UPDATE, `users/${this.dbRef}`, { session });
+
+        if (wasPlaying) {
+            this.gameProps.__secRspFactor = respawnFactor;
+            gcode = this.gameProps.__gCode;
+            gname = this.gameProps.__gName;
+        }
+        else respawnFactor = -1;
 
         this.blockDBRef.on("value", async (snap) => {
             const hasBlocked = snap.val();
@@ -82,44 +117,53 @@ export class Player extends EventEmitter {
 
         this.send("Logged-In", { // Send ack of auth success with gathered data
             players: plrsData,
-            id: this.id,
+            parsedQueueItems,
+            id: this.dbRef,
+            respawnFactor,
+            wasPlaying,
+            respawned,
             session,
+            gcode,
+            gname,
             name
         });
 
         Logger.log(Level.INFO, `${name} joined with ID = ${this.id}`);
     }
 
-    switchState(newSock: WebSocket.WebSocket = null, isPassive = false, rspTok = "N/A") {
-        if (this.alive && this.sock != null) {
-            this.authenticated = false;
-
-            if (!isPassive) {
-                this.sock = null;
-                this.alive = false;
-            }
-
-            if (this.status != 'playing') this.status = 'idle';
-            if (this.name) Logger.log(Level.INFO, `${this.name} ${isPassive ? 'Logged Out' : 'Stalled'}`);
-        }
-        else if (newSock != null) {
+    switchState(newSock: WebSocket.WebSocket = null) {
+        if (newSock !== null) {
             this.alive = true;
             this.sock = newSock;
-            if (this.status == "playing") this.emit('respawn', rspTok);
-            Logger.log(Level.INFO, `${this.name} Revived`)
+            this.subscribe(); // Start Re-listening
+            Logger.log(Level.INFO, `${this.name} Revived`);
+        }
+        else if (this.alive && this.sock !== null) {
+            this.sock.off('message', this.boundHandleMsg);
+            this.sock.off('error', this.boundHandleDisc);
+            this.sock.off('close', this.boundHandleDisc);
+            this.authenticated = false;
+            this.alive = false;
+            this.sock = null;
+
+            if (this.status != 'playing') this.status = 'idle';
+            if (this.name) Logger.log(Level.INFO,
+                `${this.name} Disconnected`);
         }
     }
 
     // Change game-play status of the player
-    switchStatus(playing: boolean = false) {
-        if (playing) {
-            this.status = 'playing';
-        }
-        else {
-            if (this.status == 'idle')
+    switchStatus(playing: boolean = false, searching: boolean = false) {
+        if (playing) this.status = 'playing';
+        else if (this.status === 'playing') {
+            if (searching) {
+                this.emit("leave");
                 this.status = 'searching';
+            }
             else this.status = 'idle';
         }
+        else if (searching) this.status = 'searching';
+        else this.status = 'idle';
 
         this.emit("status", this); // This triggers status-broadcast to all connected players
         Logger.log(Level.INFO, `${this.name} is now ${this.status}`);
@@ -127,18 +171,10 @@ export class Player extends EventEmitter {
 
     fireDisconnection(passive = false) {
         try {
-            this.emit("disconnected");
-
-            if (this.status == 'playing') {
-                // [To-Do] Implement game notifier
-                // Using .emit('disconnected') and on('disconnectd')
-            }
-
-            if (this.status == 'searching') {
+            if (this.status === 'searching')
                 Lobby.removeFinder(this);
-            }
-
-            this.switchState(null, passive); // Stall the player
+            this.switchState(null); // Stall the player
+            this.emit("disconnected"); // Emit disconnection signal
         }
         catch (e) {
             Logger.log(Level.ERROR, e.toString());
@@ -149,10 +185,12 @@ export class Player extends EventEmitter {
 
             // Store the player object so that it can be revived if it gives
             // right secret token with correct authentication
-            Master.stalePlayers.add(this);
-            if (Master.players.has(this)) Master.players.delete(this);
+
+            if (Master.players.has(this))
+                Master.players.delete(this);
             Master.broadcast("Left", { id: this.id });
             if (Master.players.size === 0) Master.pIds = 0;
+            if (!passive && this.dbRef) Master.stalePlayers.set(this.dbRef, this);
         }
     }
 
@@ -165,7 +203,9 @@ export class Player extends EventEmitter {
             Logger.log(Level.WARN, `Unable to send message to Player(${this.name})`,
                 `alive : readyState = ${this.alive} : ${this.sock?.readyState}`,
                 `bypass : authenticated = ${bypass} : ${this.authenticated}`,
-                `MSG-Type: ${type} || My-ID: ${this.id}`);
+                `MSG-Type: ${type} || My-ID: ${this.id}`,
+                `MSG-Content: ${JSON.stringify(data)}`
+            );
         }
     }
 
@@ -210,7 +250,7 @@ export class Player extends EventEmitter {
     }
 
     private pingKill() {
-        this.sock.close();
+        this.sock?.close();
         this.fireDisconnection();
         if (this.name) Logger.log(Level.WARN, `Ping Timed Out for Player(${this.name})`);
     }

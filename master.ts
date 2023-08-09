@@ -18,7 +18,7 @@ export enum DBMode {
 export abstract class Master
 {
     static db: admin.database.Database; // Firebase database object reference
-    static stalePlayers: Set<Player> = new Set(); // Players that have been disconnected or not responding
+    static stalePlayers: Map<String, Player> = new Map(); // Players that have been disconnected or not responding
     static players: Set<Player> = new Set(); // Active players
     static games: Set<Game> = new Set(); // All active game rooms
     static pIds: number = 0;
@@ -95,11 +95,24 @@ export abstract class Master
         }
     }
 
+    private static tryRespawn(p: Player, name: string, eref: string, queue?: object): boolean {
+        if (!this.stalePlayers.has(eref)) return false;
+        const respPlr = this.stalePlayers.get(eref);
+        this.stalePlayers.delete(eref);
+        respPlr.switchState(p.sock);
+        respPlr.postAuth(name, eref,
+            queue, true);
+        respPlr.id = p.id;
+        p.switchState();
+        p.id = -1;
+        return true;
+    }
+
     private static async handleMSG(plr: Player, msg: any) {
         const data = msg.data;
 
         switch (msg.type) {
-            case "Login": { // [To-Do]: add logic to revive disconnected player
+            case "Login": { // ToDo: add logic to revive disconnected player
                 let emDbRefLog = 'null';
 
                 if (data.sess && typeof data.sess == 'string') {
@@ -109,7 +122,10 @@ export abstract class Master
                         const userDObj = qryData[dref];
 
                         if (parseInt(userDObj.session.split('|')[1]) > Date.now()) {
-                            if (!userDObj.isBlocked) plr.postAuth(userDObj.name, dref);
+                            if (!userDObj.isBlocked) {
+                                if (!this.tryRespawn(plr, userDObj.name, dref, data.queue))
+                                    plr.postAuth(userDObj.name, dref, data.queue);
+                            }
                             else plr.send('Warn', "Your are blocked by admin", true);
                             return;
                         }
@@ -127,7 +143,10 @@ export abstract class Master
                 const userDet = await this.dbGet(`users/${emDbRefLog}`);
                 if (userDet !== null) { // Okay user already registered!
                     if (userDet.pass === Utility.hash(data.pass)) { // Authenticate password
-                        if (!userDet.isBlocked) plr.postAuth(userDet.name, emDbRefLog); // Authentication passed
+                        if (!userDet.isBlocked) { // Authentication passed
+                            if (!this.tryRespawn(plr, userDet.name, emDbRefLog, data.queue)) // Let's respawn player if connected already earlier
+                                plr.postAuth(userDet.name, emDbRefLog, data.queue); // Else normal login
+                        }
                         else plr.send('Warn', "Your are blocked by admin", true);
                     }
                     else plr.send('Error', "Oh! It's wrong login password.", true);
@@ -223,7 +242,7 @@ export abstract class Master
     private static pushStatusUpdate(exPlr: Player) {
         this.broadcast('Status-Update', { // Inform every other player about 'exPlr' new status
             status: exPlr.status,
-            id: exPlr.id
+            id: exPlr.dbRef
         }, exPlr);
     }
 }

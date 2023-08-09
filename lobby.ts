@@ -5,7 +5,7 @@ import { RMCSGame } from './rmcs';
 import { Game } from './game';
 
 export abstract class Lobby {
-    static plrsMap: { [id: number]: [string, number] } = {};
+    static plrsMap: { [id: string]: [string, number] } = {};
     static finders: { [id: string]: { [id: number]: Player[] } } = {
         'rmcs': {},
         'bgo': {},
@@ -25,10 +25,10 @@ export abstract class Lobby {
         const isGmAvail = (gId in this.maxPlrs); // Do server supports the game user wants to play?
         const hasValidNum = numPlr > 1 && numPlr <= maxPlayers; // Check if request contains valid player count
         const isMaxSafe = (this.maxPlrs[gId][1] ? numPlr === maxPlayers : numPlr <= maxPlayers); // Fixed number of players can play only
-        if (!isGmAvail || !hasValidNum || !isMaxSafe) return false; // Reject malformed request
+        if (plr.status === 'searching' || !isGmAvail || !hasValidNum || !isMaxSafe) return false; // Reject malformed request
 
-        plr.switchStatus();
-        this.plrsMap[plr.id] = [gId, numPlr];
+        plr.switchStatus(false, true);
+        this.plrsMap[plr.dbRef] = [gId, numPlr];
 
         if (!(numPlr in this.finders[gId]))
             this.finders[gId][numPlr] = [];
@@ -40,8 +40,8 @@ export abstract class Lobby {
     // Called whenever player withdraws request for matchmaking
     static removeFinder(plr: Player) {
         plr.switchStatus(); // Makes player idle
-        if (!(plr.id in this.plrsMap)) return;
-        const plrSearchData = this.plrsMap[plr.id];
+        if (!(plr.dbRef in this.plrsMap)) return;
+        const plrSearchData = this.plrsMap[plr.dbRef];
         let numSearch = plrSearchData[1];
         let gmSearch = plrSearchData[0];
 
@@ -50,25 +50,25 @@ export abstract class Lobby {
             let idx = plrs.indexOf(plr);
 
             if (idx > -1) {
-                delete this.plrsMap[plr.id];
+                delete this.plrsMap[plr.dbRef];
                 plrs.splice(idx, 1);
             }
 
-            plrs.forEach(p => p.send('Match-Making-Left', { id: plr.id }));
+            plrs.forEach(p => p.send('Match-Making-Left', { id: plr.dbRef }));
         }
     }
 
     private static tryMatch(gId, roomRef: { [id: number]: Player[] }, keyPlr, joined: Player) {
         const roomPlrs = roomRef[keyPlr];
-        const plrsId: number[] = [];
+        const plrsId: string[] = [];
 
         for (var i = 0; i < roomPlrs.length; i++) {
             const eachPlr = roomPlrs[i];
             if (joined === eachPlr) continue;
 
-            plrsId.push(eachPlr.id);
+            plrsId.push(eachPlr.dbRef);
             eachPlr.send("New-Opponent", {
-                id: joined.id
+                id: joined.dbRef
             });
         }
 
@@ -81,12 +81,12 @@ export abstract class Lobby {
 
             switch (gId) {
                 case "rmcs": {
-                    game = new RMCSGame(...roomPlrs); // & Create new game room with all players
+                    game = new RMCSGame(gId, ...roomPlrs); // & Create new game room with all players
                     break;
                 }
 
                 case "bgo": {
-                    game = new BingoGame(...roomPlrs);
+                    game = new BingoGame(gId, ...roomPlrs);
                     break;
                 }
             }
@@ -100,16 +100,19 @@ export abstract class Lobby {
     }
 
     private static handleGameStart(game: Game) {
-        // Broadcast to users that a new game has started
+        // ToDo: Broadcast to users that a new game has started
     }
 
     private static handleGameEnd(game: Game) {
-        // [To-Do]: in Game class itself call switchStatus() for each game-players
-        // Broadcast to users & viewers that game has ended
+        game.removeAllListeners('update');
+        game.removeAllListeners('start');
+        game.removeAllListeners('end');
+
+        // ToDo: Broadcast to users & viewers that game has ended
     }
 
     private static handleGameUpdate(game: Game) {
-        // Implement feature to live view any active game
-        // Broadcast updates to players who are actively wathching live games
+        // ToDo: Implement feature to live view any active game
+        // ToDo: Broadcast updates to players who are actively wathching live games
     }
 }
