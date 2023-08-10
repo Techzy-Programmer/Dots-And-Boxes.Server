@@ -40,6 +40,12 @@ export class Game extends EventEmitter {
         this.initialize(); // Basic setup done let's start
     }
 
+    spinLatency(pingPlr: Player) {
+        setTimeout(() => pingPlr.gsend("Server-TS", {
+            svrTS: Date.now()
+        }), 500);
+    }
+
     private initialize() {
         let pIds = [];
         let ackAll: Set<String> = new Set(); // Using Set to determine unique acknowledgement
@@ -48,12 +54,7 @@ export class Game extends EventEmitter {
 
         this.processAll((p: Player) => {
             p.on('game-msg', (data) => {
-                function spinLatency(pingPlr: Player) {
-                    setTimeout(() => pingPlr.gsend("Server-TS", {
-                        svrTS: Date.now()
-                    }), 500);
-                }
-
+                
                 const gmData = data.data;
                 switch (data.msg) {
                     case "Ack":
@@ -62,7 +63,7 @@ export class Game extends EventEmitter {
                         if (ackAll.size == this.allPlrs.size) { // all acknowledgement received
                             this.processAll((ackPlr: Player) => {
                                 ackPlr.gsend("Goto-Game", { plrIds: pIds });
-                                spinLatency(ackPlr);
+                                this.spinLatency(ackPlr);
                             });
 
                             Logger.log(Level.INFO, `All Acknowledgement received for Game ${this.name}`);
@@ -82,7 +83,7 @@ export class Game extends EventEmitter {
                                 clTS
                             });
 
-                            spinLatency(p);
+                            this.spinLatency(p);
                         }
                         return;
 
@@ -92,8 +93,6 @@ export class Game extends EventEmitter {
                                 srf: gmData.srf,
                                 plrIds: pIds
                             });
-
-                            spinLatency(p);
                         }
                         break;
                 }
@@ -144,7 +143,7 @@ export class Game extends EventEmitter {
         });
     }
 
-    protected processAll(funcOperator: Function) {
+    protected processAll(funcOperator: (p: Player) => void) {
         for (const p of this.allPlrs.values())
             funcOperator(p);
     }

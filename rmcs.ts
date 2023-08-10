@@ -1,13 +1,12 @@
 import { setTimeout } from "timers";
-import { Game } from "./game";
 import { Player } from "./player";
+import { Game } from "./game";
 
 export class RMCSGame extends Game {
     private leftPlrs: Set<Player> = new Set();
     private resultDeclared: boolean = false;
     private readonly roundDelaySec = 15;
     private gameEnded: boolean = false;
-    private rejoinedCount: number = 0;
     private rsetTOut: NodeJS.Timeout;
 
     psnaToPlrs: { [key: string]: Player } = {};
@@ -29,13 +28,6 @@ export class RMCSGame extends Game {
     };
 
     constructor(gCode: string, ...plrs: Player[]) {
-        /*
-         * ToDo: Dispose game properly
-         * Broadcast that game has now ended
-         * Remove all listners like (Player.on())
-         * Make variables null & remove reference from Master.games[]
-        */
-
         super(gCode, "Raja Mantri Chor Sipahi", ...plrs);
         this.onCustomData(this.processCustomData.bind(this));
         this.onMessage(this.processMessage.bind(this));
@@ -95,7 +87,6 @@ export class RMCSGame extends Game {
                     if (this.discPlrs.delete(plr.dbRef)) {
                         this.broadcast("Re-Joined", { who: plr.dbRef }, [plr]);
                         this.leftPlrs.add(plr);
-                        this.rejoinedCount++;
                     }
 
                     if (this.discPlrs.size !== 0) { // Checkpoint for players who haven't yet re-joined the game room
@@ -137,8 +128,8 @@ export class RMCSGame extends Game {
                 break;
 
             case "Game-Rendered":
-                if (this.leftPlrs.delete(plr)) this.rejoinedCount--;
-                if (this.rejoinedCount !== 0) return;
+                this.leftPlrs.delete(plr);
+                if (this.leftPlrs.size !== 0) return;
                 if (this.destroyer) clearTimeout(this.destroyer);
                 const roundDelaySec = this.roundDelaySec;
                 this.halted = false;
@@ -154,6 +145,7 @@ export class RMCSGame extends Game {
                         this.informStartRound(true);
                 }
                 else this.resetRound();
+                this.processAll(p => this.spinLatency(p));
                 break;
 
             case "Chit-Id":
