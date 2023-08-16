@@ -202,11 +202,13 @@ export class RMCSGame extends Game {
                 break;
 
             case "Quit":
-                if (plr.status !== 'playing') return;
-                const pQuit: boolean = data?.promptQuit &&
-                    data?.srf === plr.gameProps.__secRspFactor;
-                this.broadcast("Quit", { who: plr.dbRef, pQuit }, [plr]);
-                setTimeout(this.declareResult.bind(this), 2000);
+                if (plr.status === 'playing') {
+                    const pQuit: boolean = data?.promptQuit &&
+                        data?.srf === plr.gameProps.__secRspFactor;
+                    this.broadcast("Quit", { who: plr.dbRef, pQuit }, [plr]);
+                    this.declareResult();
+                }
+
                 plr.gsend("Quit-Success");
                 break;
 
