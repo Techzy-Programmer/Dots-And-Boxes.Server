@@ -116,6 +116,7 @@ export class Player extends EventEmitter {
         });
 
         this.send("Logged-In", { // Send ack of auth success with gathered data
+            playables: Utility.getAvailableGames(),
             players: plrsData,
             parsedQueueItems,
             id: this.dbRef,

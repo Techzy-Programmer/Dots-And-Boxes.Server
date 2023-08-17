@@ -12,6 +12,10 @@ export abstract class Utility {
             setTimeout(resolve, millis));
     }
 
+    static getAvailableGames(): string[] {
+        return ["rmcs"];
+    }
+
     static isValidPassword(password: string) {
         const re = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&<>=_\{\}\[\]|\\\/])[A-Za-z\d@$!%*#?&<>=_\{\}\[\]|\\\/]{8,}$/;
         return re.test(password);
